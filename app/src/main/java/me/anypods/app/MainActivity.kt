@@ -121,11 +121,14 @@ class MainActivity : ComponentActivity() {
                 onStopFindMy = {
                     AudioEnhancer.stopFindMyTone()
                 },
-                onSetCaseBattery = { level, isCharging ->
-                    BluetoothTracker.setCaseBattery(level, isCharging)
+                onSetLeftPod = { level, isCharging ->
+                    BluetoothTracker.setLeftPod(level, isCharging)
                 },
-                onSetBudCharging = { left, charging ->
-                    BluetoothTracker.setBudCharging(left, charging)
+                onSetRightPod = { level, isCharging ->
+                    BluetoothTracker.setRightPod(level, isCharging)
+                },
+                onSetCase = { level, isCharging ->
+                    BluetoothTracker.setCase(level, isCharging)
                 }
             )
         }
@@ -186,8 +189,9 @@ fun AnyPodsScreen(
     onSetBalance: (Float) -> Unit,
     onFindMy: (Boolean, Boolean) -> Unit,
     onStopFindMy: () -> Unit,
-    onSetCaseBattery: (Int, Boolean) -> Unit,
-    onSetBudCharging: (Boolean, Boolean) -> Unit
+    onSetLeftPod: (Int, Boolean) -> Unit,
+    onSetRightPod: (Int, Boolean) -> Unit,
+    onSetCase: (Int, Boolean) -> Unit
 ) {
     var isBeeping by remember { mutableStateOf(false) }
 
@@ -245,7 +249,6 @@ fun AnyPodsScreen(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Status Badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -300,7 +303,7 @@ fun AnyPodsScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // 3 Distinct Battery Gauges (Left, Case, Right)
+                    // 3 Distinct Battery Gauges (Left, Case, Right) with live ⚡ indicators
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
@@ -327,7 +330,88 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 1. Noise Control Modes (Noise Cancellation, Off, Transparency, Adaptive Audio)
+            // Quick Actions: Pop-up Trigger
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "AirPods Pop-up Card",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Show the Apple iOS style floating popup card with live battery gauges.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onShowPopup,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF))
+                    ) {
+                        Text("Show AirPods Pop-up Card", color = Color.White)
+                    }
+                }
+            }
+
+            // 1. Independent Battery & Charging Calibration for ALL THREE (Left, Right, Case)
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Battery & Charging Calibration",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Set exact individual battery levels and live ⚡ charging state for Left Pod, Right Pod, and Case.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // LEFT POD CONTROLS
+                    DeviceBatteryControlSection(
+                        title = "Left Earbud",
+                        level = state.leftBattery,
+                        isCharging = state.isLeftCharging,
+                        onLevelChange = { onSetLeftPod(it, state.isLeftCharging) },
+                        onChargingChange = { onSetLeftPod(state.leftBattery, it) }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+
+                    // RIGHT POD CONTROLS
+                    DeviceBatteryControlSection(
+                        title = "Right Earbud",
+                        level = state.rightBattery,
+                        isCharging = state.isRightCharging,
+                        onLevelChange = { onSetRightPod(it, state.isRightCharging) },
+                        onChargingChange = { onSetRightPod(state.rightBattery, it) }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+
+                    // CHARGING CASE CONTROLS
+                    DeviceBatteryControlSection(
+                        title = "Charging Case",
+                        level = state.caseBattery,
+                        isCharging = state.isCaseCharging,
+                        onLevelChange = { onSetCase(it, state.isCaseCharging) },
+                        onChargingChange = { onSetCase(state.caseBattery, it) }
+                    )
+                }
+            }
+
+            // 2. Noise Control Modes
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
@@ -354,13 +438,12 @@ fun AnyPodsScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Apple AirPods Pro acoustic modes: Full Noise Cancellation, Transparency pass-through, or smart Adaptive Audio.",
+                        text = "Seamless DSP filtering without song stuttering or Bluetooth drops.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 4-Segment Noise Control
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -406,7 +489,7 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 2. Audio Intelligence: Conversation Awareness, Personalized Volume, Loud Sound Reduction
+            // 3. Audio Intelligence
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
@@ -419,7 +502,6 @@ fun AnyPodsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Conversation Awareness
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -442,7 +524,6 @@ fun AnyPodsScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                    // Personalized Volume
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -465,7 +546,6 @@ fun AnyPodsScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                    // Loud Sound Reduction
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -474,7 +554,7 @@ fun AnyPodsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Loud Sound Reduction", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                             Text(
-                                "Caps sudden harsh sounds (horns, sirens) in Transparency mode.",
+                                "Protects hearing by smoothing harsh peaks.",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -488,7 +568,7 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 3. Spatial Audio (Fixed, Head Tracked, Off)
+            // 4. Spatial Audio
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
@@ -532,7 +612,7 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 4. Headphone Accommodations (AirPods Pro EQ Tuning)
+            // 5. Headphone Accommodations (AirPods Pro EQ Tuning)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
@@ -551,7 +631,6 @@ fun AnyPodsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Profiles
                     Text("Tuning Profile:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(
@@ -579,7 +658,6 @@ fun AnyPodsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Intensities
                     Text("Boost Level:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(
@@ -607,7 +685,7 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 5. Left / Right Audio Balance
+            // 6. Left / Right Audio Balance
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
@@ -659,109 +737,7 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 6. Case Battery & Charging Level Calibration Card
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Case Battery & Live Charging",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "${state.caseBattery}%" + (if (state.isCaseCharging) " ⚡" else ""),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (state.isCaseCharging) Color(0xFF34C759) else Color(0xFF007AFF)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Fine-tune charging case battery level if your earbuds do not report individual case telemetry.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    val casePresets = listOf(25, 45, 70, 100)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        casePresets.forEach { level ->
-                            OutlinedButton(
-                                onClick = { onSetCaseBattery(level, state.isCaseCharging) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (state.caseBattery == level) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
-                            ) {
-                                Text("$level%", fontSize = 12.sp)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Slider(
-                        value = state.caseBattery.toFloat(),
-                        onValueChange = { onSetCaseBattery(it.toInt(), state.isCaseCharging) },
-                        valueRange = 0f..100f
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Case is plugged in (⚡ Charging)", fontSize = 14.sp)
-                        Switch(
-                            checked = state.isCaseCharging,
-                            onCheckedChange = { onSetCaseBattery(state.caseBattery, it) }
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Left Earbud Charging (⚡)", fontSize = 14.sp)
-                        Switch(
-                            checked = state.isLeftCharging,
-                            onCheckedChange = { onSetBudCharging(true, it) }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Right Earbud Charging (⚡)", fontSize = 14.sp)
-                        Switch(
-                            checked = state.isRightCharging,
-                            onCheckedChange = { onSetBudCharging(false, it) }
-                        )
-                    }
-                }
-            }
-
-            // 7. Find My Earbuds (Ultra Loud Beacon +25dB Boost)
+            // 7. Find My Earbuds
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
@@ -774,7 +750,7 @@ fun AnyPodsScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Overrides volume to 100% with +25dB gain boost so you can hear lost earbuds outside or across rooms.",
+                        text = "Plays +25dB gain siren directly inside the earbud drivers so you can locate them across rooms or outside.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -837,36 +813,84 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 8. Quick Actions: Pop-up Trigger
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+fun DeviceBatteryControlSection(
+    title: String,
+    level: Int,
+    isCharging: Boolean,
+    onLevelChange: (Int) -> Unit,
+    onChargingChange: (Boolean) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "$level%",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = if (isCharging) Color(0xFF34C759) else MaterialTheme.colorScheme.primary
+                )
+                if (isCharging) {
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "AirPods Pop-up Card",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "⚡ Charging",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = Color(0xFF34C759)
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Show the Apple iOS style floating popup card with live battery gauges.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = onShowPopup,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF))
-                    ) {
-                        Text("Show AirPods Pop-up Card", color = Color.White)
-                    }
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val presets = listOf(20, 50, 80, 100)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            presets.forEach { pct ->
+                OutlinedButton(
+                    onClick = { onLevelChange(pct) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (level == pct) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                    )
+                ) {
+                    Text("$pct%", fontSize = 12.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Slider(
+            value = level.toFloat(),
+            onValueChange = { onLevelChange(it.toInt()) },
+            valueRange = 0f..100f
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Active Charging (⚡)", fontSize = 13.sp)
+            Switch(
+                checked = isCharging,
+                onCheckedChange = onChargingChange
+            )
         }
     }
 }
