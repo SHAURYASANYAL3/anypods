@@ -23,7 +23,8 @@ class AudioEffectReceiver : BroadcastReceiver() {
 
         Log.d(TAG, "Audio effect broadcast received: action=$action, session=$sessionId, pkg=$pkg")
 
-        if (sessionId == AudioEffect.ERROR_BAD_VALUE || sessionId == 0) return
+        // ponytail: drop malformed/out-of-range sessions to protect native audioserver from DoS
+        if (sessionId == AudioEffect.ERROR_BAD_VALUE || sessionId <= 0 || sessionId > 500000) return
 
         when (action) {
             ACTION_OPEN_CONTROL, ACTION_OPEN_SESSION -> {

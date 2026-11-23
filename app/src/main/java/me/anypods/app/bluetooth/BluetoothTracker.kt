@@ -64,16 +64,11 @@ object BluetoothTracker {
                         bluetoothA2dp = proxy as? BluetoothA2dp
                         Log.d(TAG, "BluetoothA2dp proxy connected")
                         refreshConnectedDevice()
-                    } else if (profile == BluetoothProfile.HEADSET) {
-                        bluetoothHeadset = proxy as? BluetoothHeadset
-                        Log.d(TAG, "BluetoothHeadset proxy connected")
-                        refreshConnectedDevice()
                     }
                 }
 
                 override fun onServiceDisconnected(profile: Int) {
                     if (profile == BluetoothProfile.A2DP) bluetoothA2dp = null
-                    if (profile == BluetoothProfile.HEADSET) bluetoothHeadset = null
                 }
             }, BluetoothProfile.A2DP)
 
@@ -330,12 +325,38 @@ object BluetoothTracker {
     private fun readGattBattery(device: BluetoothDevice) {
         val ctx = appContext ?: return
         try {
-            device.connectGatt(ctx, false, object : BluetoothGattCallback() {
+            var gattRef: BluetoothGatt? = null
+            var isClosed = false
+            val closeLock = Any()
+
+            fun safeClose() {
+                synchronized(closeLock) {
+                    if (!isClosed) {
+                        isClosed = true
+                        try { gattRef?.close() } catch (_: Exception) {}
+                        gattRef = null
+                    }
+                }
+            }
+
+            // ponytail: 5-second timeout ensures GATT client connection slots (max 32) are never leaked
+            val timeoutJob = scope.launch(Dispatchers.Default) {
+                delay(5000)
+                safeClose()
+            }
+
+            gattRef = device.connectGatt(ctx, false, object : BluetoothGattCallback() {
                 override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+                    if (status != BluetoothGatt.GATT_SUCCESS) {
+                        timeoutJob.cancel()
+                        safeClose()
+                        return
+                    }
                     if (newState == BluetoothProfile.STATE_CONNECTED) {
                         gatt?.discoverServices()
                     } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                        gatt?.close()
+                        timeoutJob.cancel()
+                        safeClose()
                     }
                 }
 
@@ -346,8 +367,12 @@ object BluetoothTracker {
                         if (batteryChar != null) {
                             gatt.readCharacteristic(batteryChar)
                         } else {
-                            gatt.close()
+                            timeoutJob.cancel()
+                            safeClose()
                         }
+                    } else {
+                        timeoutJob.cancel()
+                        safeClose()
                     }
                 }
 
@@ -365,7 +390,8 @@ object BluetoothTracker {
                             }
                         }
                     }
-                    gatt?.close()
+                    timeoutJob.cancel()
+                    safeClose()
                 }
             })
         } catch (e: Exception) {

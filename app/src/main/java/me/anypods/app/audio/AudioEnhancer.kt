@@ -1,6 +1,8 @@
 package me.anypods.app.audio
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -54,6 +56,9 @@ data class SessionAudioEffects(
 object AudioEnhancer {
     private const val TAG = "AnyPods.AudioEnhancer"
 
+    // ponytail: Cap concurrent audio sessions to 4 to prevent external DoS on audioserver
+    private const val MAX_CONCURRENT_SESSIONS = 4
+
     // Active audio sessions (Spotify, YouTube Music, Apple Music, VLC, plus global session 0)
     private val activeSessions = ConcurrentHashMap<Int, SessionAudioEffects>()
 
@@ -68,6 +73,7 @@ object AudioEnhancer {
     val currentToneProfile = MutableStateFlow(ToneProfile.BALANCED_TONE)
     val currentToneIntensity = MutableStateFlow(ToneIntensity.MODERATE)
     val currentBalance = MutableStateFlow(0f)
+    val hasBalancePermission = MutableStateFlow(false)
     val currentAncIntensity = MutableStateFlow(AncIntensity.ULTRA)
     val antiHissWindReduction = MutableStateFlow(true)
 
@@ -86,6 +92,16 @@ object AudioEnhancer {
      */
     @Synchronized
     fun registerSession(audioSessionId: Int) {
+        if (audioSessionId < 0 || audioSessionId > 500000) {
+            Log.w(TAG, "AudioEnhancer: Invalid audioSessionId rejected: $audioSessionId")
+            return
+        }
+
+        if (activeSessions.size >= MAX_CONCURRENT_SESSIONS && !activeSessions.containsKey(audioSessionId)) {
+            Log.w(TAG, "AudioEnhancer: Max sessions ($MAX_CONCURRENT_SESSIONS) reached. Dropping session $audioSessionId to protect audioserver.")
+            return
+        }
+
         if (activeSessions.containsKey(audioSessionId)) {
             val existing = activeSessions[audioSessionId]
             if (existing != null) {
@@ -357,6 +373,16 @@ object AudioEnhancer {
         recomputeAndApplyCurves()
     }
 
+    fun checkBalancePermission(context: Context): Boolean {
+        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        hasBalancePermission.value = granted
+        return granted
+    }
+
     /**
      * Sets Left/Right stereo balance system-wide:
      * - Dispatches to Android's native Settings.Secure "master_balance"
@@ -365,21 +391,21 @@ object AudioEnhancer {
      */
     fun setAudioBalance(context: Context, balance: Float) {
         currentBalance.value = balance
-        try {
-            Settings.Secure.putFloat(context.contentResolver, "master_balance", balance)
-            Log.i(TAG, "Applied Settings.Secure master_balance: $balance")
-        } catch (e: Exception) {
-            Log.w(TAG, "Settings.Secure master_balance failed: ${e.message}")
+        // ponytail: check WRITE_SECURE_SETTINGS explicitly instead of swallowing SecurityException
+        if (checkBalancePermission(context)) {
             try {
-                Settings.System.putFloat(context.contentResolver, "master_balance", balance)
-            } catch (_: Exception) {}
+                Settings.Secure.putFloat(context.contentResolver, "master_balance", balance)
+                Log.i(TAG, "Applied Settings.Secure master_balance: $balance")
+            } catch (e: Exception) {
+                Log.w(TAG, "Settings.Secure master_balance failed: ${e.message}")
+            }
+        } else {
+            Log.i(TAG, "WRITE_SECURE_SETTINGS not granted. Stored balance $balance in-app (requires ADB grant for global audio effect).")
         }
-        try {
-            Settings.Global.putFloat(context.contentResolver, "master_balance", balance)
-        } catch (_: Exception) {}
     }
 
     fun initBalance(context: Context) {
+        checkBalancePermission(context)
         try {
             val bal = Settings.Secure.getFloat(context.contentResolver, "master_balance", 0.0f)
             currentBalance.value = bal

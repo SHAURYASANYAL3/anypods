@@ -155,7 +155,7 @@ object PodImageManager {
                 val matcher = pattern.matcher(html)
                 val candidateUrls = mutableListOf<String>()
                 while (matcher.find() && candidateUrls.size < 8) {
-                    candidateUrls.add(matcher.group(1))
+                    matcher.group(1)?.let { candidateUrls.add(it) }
                 }
 
                 Log.d(TAG, "Found ${candidateUrls.size} candidate images for query '$query'")
@@ -169,7 +169,36 @@ object PodImageManager {
                             "User-Agent",
                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
                         )
-                        val bytes = imgConn.inputStream.use { it.readBytes() }
+                        // ponytail: 5MB memory cap to prevent OOM on malicious or high-res image downloads
+                        val MAX_IMAGE_BYTES = 5 * 1024 * 1024
+                        val contentLength = imgConn.contentLength
+                        if (contentLength > MAX_IMAGE_BYTES) {
+                            Log.w(TAG, "Skipping image: Content-Length $contentLength exceeds 5MB limit")
+                            continue
+                        }
+
+                        val buffer = java.io.ByteArrayOutputStream()
+                        val chunk = ByteArray(8192)
+                        var totalRead = 0
+                        var exceeded = false
+                        imgConn.inputStream.use { stream ->
+                            var n: Int
+                            while (stream.read(chunk).also { n = it } != -1) {
+                                totalRead += n
+                                if (totalRead > MAX_IMAGE_BYTES) {
+                                    exceeded = true
+                                    break
+                                }
+                                buffer.write(chunk, 0, n)
+                            }
+                        }
+
+                        if (exceeded) {
+                            Log.w(TAG, "Skipping image: Stream exceeded 5MB cap")
+                            continue
+                        }
+
+                        val bytes = buffer.toByteArray()
 
                         if (bytes.size > 3000) {
                             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)

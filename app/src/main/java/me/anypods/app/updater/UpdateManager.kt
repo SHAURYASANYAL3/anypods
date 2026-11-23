@@ -268,7 +268,7 @@ object UpdateManager {
         }
     }
 
-    private fun isVersionNewer(latest: String, current: String): Boolean {
+    internal fun isVersionNewer(latest: String, current: String): Boolean {
         val cleanLatest = latest.removePrefix("v").trim()
         val cleanCurrent = current.removePrefix("v").trim()
 
