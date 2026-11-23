@@ -90,10 +90,16 @@ object OverlayPopup {
         }
         container.addView(statusText)
 
-        // Center Earbuds Graphic (Dynamic for all models: AirPods, Galaxy Buds, Pixel Buds, Sony, etc.)
+        // Center Earbuds Graphic (Dynamic for all models & auto web-fetched photos)
         val modelInfo = me.anypods.app.model.PodModelManager.getSelectedModel(context, state.name)
+        val customBitmap = me.anypods.app.model.PodImageManager.getDeviceBitmap(context, state.name)
         val earbudIcon = ImageView(context).apply {
-            setImageResource(modelInfo.imageRes)
+            if (customBitmap != null) {
+                setImageBitmap(customBitmap)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            } else {
+                setImageResource(modelInfo.imageRes)
+            }
             layoutParams = LinearLayout.LayoutParams(400, 300).apply {
                 gravity = Gravity.CENTER
             }

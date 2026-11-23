@@ -27,9 +27,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,16 +48,20 @@ import me.anypods.app.audio.SpatialAudioMode
 import me.anypods.app.audio.ToneIntensity
 import me.anypods.app.audio.ToneProfile
 import me.anypods.app.bluetooth.BluetoothTracker
+import me.anypods.app.bluetooth.ProximityTracker
 import me.anypods.app.model.EarbudState
+import me.anypods.app.model.PodImageManager
 import me.anypods.app.model.PodModelManager
 import me.anypods.app.model.PodModelInfo
+import me.anypods.app.ui.DynamicIslandOverlay
 import me.anypods.app.ui.OverlayPopup
+import me.anypods.app.ui.PrecisionFindMyCard
+import me.anypods.app.ui.theme.AnyPodsTheme
 import me.anypods.app.updater.UpdateInfo
 import me.anypods.app.updater.UpdateManager
 import me.anypods.app.audio.EarTipFitTester
 import me.anypods.app.audio.HearingHealthManager
 import me.anypods.app.audio.FitTestResult
-import me.anypods.app.ui.DynamicIslandOverlay
 import me.anypods.app.widget.AnyPodsWidgetProvider
 
 class MainActivity : ComponentActivity() {
@@ -87,7 +94,12 @@ class MainActivity : ComponentActivity() {
         UpdateManager.checkForUpdates(this, isManual = false)
 
         setContent {
-            val earbudState by BluetoothTracker.earbudState.collectAsState()
+            AnyPodsTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val earbudState by BluetoothTracker.earbudState.collectAsState()
             val noiseMode by NoiseControlManager.currentMode.collectAsState()
             val convAwareness by NoiseControlManager.conversationAwarenessEnabled.collectAsState()
             val personalizedVol by NoiseControlManager.personalizedVolumeEnabled.collectAsState()
@@ -215,6 +227,8 @@ class MainActivity : ComponentActivity() {
                     BluetoothTracker.setCase(level, isCharging)
                 }
             )
+                }
+            }
         }
     }
 
@@ -227,6 +241,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         AudioEnhancer.stopFindMyTone()
+        ProximityTracker.stopTracking()
         super.onDestroy()
     }
 
@@ -299,17 +314,26 @@ fun AnyPodsScreen(
 ) {
     var isBeeping by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val imageVersion by PodImageManager.imageUpdateFlow.collectAsState()
+    val isFetchingImage by PodImageManager.isFetchingFlow.collectAsState()
+    var showWebSearchDialog by remember { mutableStateOf(false) }
+
+    val customBitmap = remember(state.name, imageVersion) {
+        PodImageManager.getDeviceBitmap(context, state.name)
+    }
+
     var selectedBrand by remember { mutableStateOf("All") }
     var selectedDeviceModel by remember {
         mutableStateOf(PodModelManager.getSelectedModel(context, state.name).name)
     }
 
-    // Auto-detect matching pod model when Bluetooth connects
+    // Auto-detect matching pod model when Bluetooth connects, and auto-fetch web image
     LaunchedEffect(state.name, state.isConnected) {
         if (state.isConnected && state.name.isNotEmpty() && state.name != "Wireless Earbuds") {
             val detected = PodModelManager.detectModel(state.name)
             selectedDeviceModel = detected.name
             PodModelManager.saveSelectedModel(context, detected.id)
+            PodImageManager.autoFetchIfMissing(context, state.name)
         }
     }
 
@@ -321,11 +345,22 @@ fun AnyPodsScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = modelImageRes),
-                            contentDescription = "Pods",
-                            modifier = Modifier.size(36.dp)
-                        )
+                        if (customBitmap != null) {
+                            Image(
+                                bitmap = customBitmap.asImageBitmap(),
+                                contentDescription = "Pods",
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(id = modelImageRes),
+                                contentDescription = "Pods",
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = "AnyPods Pro",
@@ -409,20 +444,75 @@ fun AnyPodsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Image(
-                        painter = painterResource(id = modelImageRes),
-                        contentDescription = selectedDeviceModel,
+                    Box(
                         modifier = Modifier
-                            .size(185.dp)
-                            .padding(vertical = 4.dp)
-                    )
+                            .size(200.dp)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                        Color.Transparent
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (customBitmap != null) {
+                            Image(
+                                bitmap = customBitmap.asImageBitmap(),
+                                contentDescription = selectedDeviceModel,
+                                modifier = Modifier
+                                    .size(190.dp)
+                                    .padding(vertical = 4.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(id = modelImageRes),
+                                contentDescription = selectedDeviceModel,
+                                modifier = Modifier
+                                    .size(185.dp)
+                                    .padding(vertical = 4.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+
+                        if (isFetchingImage) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
 
                     Text(
-                        text = "${currentModelInfo.brand} • ${currentModelInfo.name}",
+                        text = if (customBitmap != null) "${state.name} • Web Auto-Matched" else "${currentModelInfo.brand} • ${currentModelInfo.name}",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Web Photo Control Pill / Button
+                    Surface(
+                        color = if (customBitmap != null) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.clickable { showWebSearchDialog = true }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (customBitmap != null) "🌐 Web Photo Active • Tap to Search/Change" else if (isFetchingImage) "🌐 Fetching photo from web..." else "🌐 Fetch Real Photo from Web",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (customBitmap != null) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -1122,81 +1212,19 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 7. Find My Earbuds
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Find My Earbuds (Ultra-Loud)",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Plays +25dB gain siren directly inside the earbud drivers so you can locate them across rooms or outside.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                isBeeping = true
-                                onFindMy(true, false)
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                        ) {
-                            Text("Chirp Left", fontSize = 12.sp)
-                        }
-
-                        Button(
-                            onClick = {
-                                isBeeping = true
-                                onFindMy(true, true)
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252))
-                        ) {
-                            Text("Chirp Both", fontSize = 12.sp)
-                        }
-
-                        Button(
-                            onClick = {
-                                isBeeping = true
-                                onFindMy(false, true)
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                        ) {
-                            Text("Chirp Right", fontSize = 12.sp)
-                        }
-                    }
-
-                    if (isBeeping) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = {
-                                isBeeping = false
-                                onStopFindMy()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Stop Beeping", color = Color(0xFFFF5252))
-                        }
-                    }
+            // 7. Find My Earbuds (Precision Distance Radar & Audio Siren)
+            PrecisionFindMyCard(
+                state = state,
+                isBeeping = isBeeping,
+                onFindMy = { left, right ->
+                    isBeeping = true
+                    onFindMy(left, right)
+                },
+                onStopFindMy = {
+                    isBeeping = false
+                    onStopFindMy()
                 }
-            }
+            )
 
             // 8. Apple Ear Tip Fit Test (Acoustic Reflection)
             ElevatedCard(
@@ -1592,6 +1620,86 @@ fun AnyPodsScreen(
                     if (downloadProgress < 0) {
                         OutlinedButton(onClick = onDismissUpdate) {
                             Text("Stay on Current Version")
+                        }
+                    }
+                }
+            )
+        }
+
+        // Web Image Search & Custom Fetch Dialog
+        if (showWebSearchDialog) {
+            val defaultSearchQuery = if (state.name.isNotBlank() && state.name != "Wireless Earbuds") {
+                "${state.name} earbuds"
+            } else {
+                "AirPods Pro earbuds"
+            }
+            var queryText by remember { mutableStateOf(defaultSearchQuery) }
+
+            AlertDialog(
+                onDismissRequest = { if (!isFetchingImage) showWebSearchDialog = false },
+                title = {
+                    Text("Search & Fetch Pod Photo", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "AnyPods can search the whole internet to find and apply high-resolution product photos for ANY wireless earbuds in the world.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = queryText,
+                            onValueChange = { queryText = it },
+                            label = { Text("Earbuds Model or Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (isFetchingImage) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Searching & downloading photo...", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val targetDeviceName = if (state.name.isNotBlank() && state.name != "Wireless Earbuds") state.name else queryText
+                            PodImageManager.fetchDeviceImage(context, targetDeviceName, queryText) { ok ->
+                                Toast.makeText(
+                                    context,
+                                    if (ok) "Photo matched & applied successfully!" else "Could not download photo. Please try different keywords.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                showWebSearchDialog = false
+                            }
+                        },
+                        enabled = !isFetchingImage && queryText.isNotBlank()
+                    ) {
+                        Text(if (isFetchingImage) "Searching..." else "Search & Apply")
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        if (customBitmap != null) {
+                            TextButton(
+                                onClick = {
+                                    PodImageManager.deleteDeviceImage(context, state.name)
+                                    showWebSearchDialog = false
+                                    Toast.makeText(context, "Reset to default model icon", Toast.LENGTH_SHORT).show()
+                                },
+                                enabled = !isFetchingImage
+                            ) {
+                                Text("Reset Icon", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        TextButton(
+                            onClick = { showWebSearchDialog = false },
+                            enabled = !isFetchingImage
+                        ) {
+                            Text("Cancel")
                         }
                     }
                 }

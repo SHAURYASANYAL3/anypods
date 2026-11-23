@@ -193,6 +193,11 @@ object BluetoothTracker {
             isRightCharging = false,
             isCaseCharging = current.isCaseCharging
         )
+
+        // Automatically fetch and cache real product photo from the internet
+        appContext?.let { ctx ->
+            me.anypods.app.model.PodImageManager.autoFetchIfMissing(ctx, name)
+        }
     }
 
     fun onAclConnected(device: BluetoothDevice) {
