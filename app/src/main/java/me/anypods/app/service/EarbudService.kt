@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.media.audiofx.AudioEffect
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -20,17 +22,36 @@ import me.anypods.app.MainActivity
 import me.anypods.app.R
 import me.anypods.app.bluetooth.BluetoothTracker
 import me.anypods.app.model.EarbudState
+import me.anypods.app.receiver.AudioEffectReceiver
 
 class EarbudService : Service() {
     private val CHANNEL_ID = "anypods_status_channel"
     private val NOTIF_ID = 1001
     private val scope = CoroutineScope(Dispatchers.Main)
     private var stateJob: Job? = null
+    private val audioEffectReceiver = AudioEffectReceiver()
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForegroundWithNotification(BluetoothTracker.earbudState.value)
+
+        // Register dynamic audio effect session broadcast receiver for Spotify / media players
+        try {
+            val filter = IntentFilter().apply {
+                addAction(AudioEffectReceiver.ACTION_OPEN_CONTROL)
+                addAction(AudioEffectReceiver.ACTION_CLOSE_CONTROL)
+                addAction(AudioEffectReceiver.ACTION_OPEN_SESSION)
+                addAction(AudioEffectReceiver.ACTION_CLOSE_SESSION)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(audioEffectReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(audioEffectReceiver, filter)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         stateJob = scope.launch {
             BluetoothTracker.earbudState.collectLatest { state ->
@@ -48,6 +69,9 @@ class EarbudService : Service() {
 
     override fun onDestroy() {
         stateJob?.cancel()
+        try {
+            unregisterReceiver(audioEffectReceiver)
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 

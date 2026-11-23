@@ -6,7 +6,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
-import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -23,11 +23,25 @@ object DynamicIslandOverlay {
     private var isExpanded = false
     private var isShowing = false
 
-    @SuppressLint("InflateParams")
+    private fun getStatusBarHeight(context: Context): Int {
+        val resourceId = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (resourceId > 0) {
+            context.resources.getDimensionPixelSize(resourceId)
+        } else {
+            (36 * context.resources.displayMetrics.density).toInt()
+        }
+    }
+
+    @SuppressLint("InflateParams", "ClickableViewAccessibility")
     fun show(context: Context) {
         if (isShowing) return
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = wm
+
+        val prefs = context.getSharedPreferences("anypods_island", Context.MODE_PRIVATE)
+        // Positioned safely below the status bar and camera punch hole by default
+        val defaultY = getStatusBarHeight(context) + (10 * context.resources.displayMetrics.density).toInt()
+        val savedY = prefs.getInt("island_y", defaultY)
 
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -37,18 +51,17 @@ object DynamicIslandOverlay {
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 12 // Positioned directly over/under the camera punch hole
+            y = savedY
         }
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(R.drawable.widget_background)
-            setPadding(24, 16, 24, 16)
+            setPadding(28, 18, 28, 18)
         }
 
         // Compact view row
@@ -107,10 +120,44 @@ object DynamicIslandOverlay {
         actionRow.addView(createPillButton("Off", NoiseMode.OFF))
         root.addView(actionRow)
 
-        // Tap to toggle expand/collapse
-        root.setOnClickListener {
-            isExpanded = !isExpanded
-            actionRow.visibility = if (isExpanded) View.VISIBLE else View.GONE
+        // Drag to reposition vertically so it never collides with any camera cutout
+        var touchStartY = 0f
+        var initialY = 0
+        var isDragging = false
+
+        root.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchStartY = event.rawY
+                    initialY = layoutParams.y
+                    isDragging = false
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaY = (event.rawY - touchStartY).toInt()
+                    if (kotlin.math.abs(deltaY) > 8) {
+                        isDragging = true
+                        layoutParams.y = (initialY + deltaY).coerceAtLeast(0)
+                        try {
+                            wm.updateViewLayout(root, layoutParams)
+                        } catch (_: Exception) {}
+                        true
+                    } else {
+                        false
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (isDragging) {
+                        prefs.edit().putInt("island_y", layoutParams.y).apply()
+                        true
+                    } else {
+                        isExpanded = !isExpanded
+                        actionRow.visibility = if (isExpanded) View.VISIBLE else View.GONE
+                        true
+                    }
+                }
+                else -> false
+            }
         }
 
         islandView = root

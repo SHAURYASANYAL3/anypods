@@ -34,21 +34,16 @@ object NoiseControlManager {
     val loudSoundReductionEnabled = MutableStateFlow(true)
     val ambientDecibels = MutableStateFlow(42)
 
-    private var adaptiveMonitorJob: Job? = null
-    private var conversationMonitorJob: Job? = null
-    private var personalizedVolumeJob: Job? = null
-
+    private var audioMonitorJob: Job? = null
     private var originalMediaVolume: Int? = null
     private var isDucked = false
+    private var lastPersonalizedDb = 50
 
     fun setMode(context: Context, mode: NoiseMode) {
         _currentMode.value = mode
         Log.d(TAG, "Setting Noise Mode to: $mode")
 
         // Play Apple acoustic feedback chime
-        // Dispatch hardware listening mode to connected Bluetooth headset if supported
-        me.anypods.app.bluetooth.BluetoothTracker.sendHardwareListeningMode(mode)
-
         when (mode) {
             NoiseMode.NOISE_CANCELLATION -> me.anypods.app.audio.AppleSoundChimes.playAncWhoosh(context)
             NoiseMode.TRANSPARENCY -> me.anypods.app.audio.AppleSoundChimes.playTransparencyTone(context)
@@ -60,111 +55,41 @@ object NoiseControlManager {
         me.anypods.app.bluetooth.BluetoothTracker.sendHardwareListeningMode(mode)
 
         when (mode) {
-            NoiseMode.NOISE_CANCELLATION -> {
-                stopAdaptiveMonitor()
-                AudioEnhancer.applyNoiseCancellationMode()
-            }
-            NoiseMode.TRANSPARENCY -> {
-                stopAdaptiveMonitor()
-                AudioEnhancer.applyTransparencyMode()
-            }
-            NoiseMode.OFF -> {
-                stopAdaptiveMonitor()
-                AudioEnhancer.applyOffMode()
-            }
-            NoiseMode.ADAPTIVE -> {
-                startAdaptiveMonitor(context)
-            }
+            NoiseMode.NOISE_CANCELLATION -> AudioEnhancer.applyNoiseCancellationMode()
+            NoiseMode.TRANSPARENCY -> AudioEnhancer.applyTransparencyMode()
+            NoiseMode.OFF -> AudioEnhancer.applyOffMode()
+            NoiseMode.ADAPTIVE -> {}
         }
+
+        updateAudioMonitor(context)
     }
 
     /**
-     * Adaptive Audio Mode:
-     * Samples room/street decibels without interfering with Bluetooth music streaming.
-     * When ambient noise > 65 dB, seamlessly shifts to Noise Cancellation acoustic seal.
-     * When quiet (< 65 dB), shifts to open Transparency.
+     * Unified Continuous Audio Monitor:
+     * High efficiency, single microphone stream that simultaneously powers:
+     * 1. Adaptive Audio Mode (switches ANC / Transparency on ambient noise shift)
+     * 2. Conversation Awareness (ducks music when user speaks)
+     * 3. Personalized Volume (adapts media playback volume to environmental loudness)
      */
     @SuppressLint("MissingPermission")
-    private fun startAdaptiveMonitor(context: Context) {
-        stopAdaptiveMonitor()
-        adaptiveMonitorJob = scope.launch {
-            val sampleRate = 16000
-            val minBuf = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    private fun updateAudioMonitor(context: Context) {
+        val needsMonitor = conversationAwarenessEnabled.value ||
+                personalizedVolumeEnabled.value ||
+                _currentMode.value == NoiseMode.ADAPTIVE
 
-            var record: AudioRecord? = null
-            try {
-                record = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    minBuf.coerceAtLeast(1024)
-                )
-                record.startRecording()
-
-                val buf = ShortArray(512)
-                var lastTarget: NoiseMode? = null
-
-                while (isActive) {
-                    val read = record.read(buf, 0, buf.size)
-                    if (read > 0) {
-                        var sumSq = 0.0
-                        for (i in 0 until read) {
-                            sumSq += buf[i] * buf[i]
-                        }
-                        val rms = sqrt(sumSq / read)
-                        val db = (20 * log10(rms.coerceAtLeast(1.0))).toInt()
-                        ambientDecibels.value = db
-
-                        val target = if (db > 62) NoiseMode.NOISE_CANCELLATION else NoiseMode.TRANSPARENCY
-                        if (target != lastTarget) {
-                            lastTarget = target
-                            if (target == NoiseMode.NOISE_CANCELLATION) {
-                                AudioEnhancer.applyNoiseCancellationMode()
-                            } else {
-                                AudioEnhancer.applyTransparencyMode()
-                            }
-                        }
-                    }
-                    delay(1000)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Adaptive monitor error: ${e.message}")
-            } finally {
-                try {
-                    record?.stop()
-                    record?.release()
-                } catch (e: Exception) {}
-            }
-        }
-    }
-
-    private fun stopAdaptiveMonitor() {
-        adaptiveMonitorJob?.cancel()
-        adaptiveMonitorJob = null
-    }
-
-    /**
-     * Conversation Awareness:
-     * When you talk, smoothly ducks music volume without breaking playback.
-     * When speech stops for 2.5 seconds, smoothly restores original music volume.
-     */
-    @SuppressLint("MissingPermission")
-    fun toggleConversationAwareness(context: Context, enabled: Boolean) {
-        conversationAwarenessEnabled.value = enabled
-        conversationMonitorJob?.cancel()
-        conversationMonitorJob = null
-
-        if (!enabled) {
-            restoreMediaVolume(context)
+        if (!needsMonitor) {
+            audioMonitorJob?.cancel()
+            audioMonitorJob = null
             return
         }
 
-        conversationMonitorJob = scope.launch {
+        if (audioMonitorJob?.isActive == true) return
+
+        audioMonitorJob = scope.launch {
             val sampleRate = 16000
             val minBuf = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-
             var record: AudioRecord? = null
+
             try {
                 record = AudioRecord(
                     MediaRecorder.AudioSource.MIC,
@@ -177,39 +102,105 @@ object NoiseControlManager {
 
                 val buf = ShortArray(512)
                 var lastSpokenTime = 0L
+                var lastAdaptiveTarget: NoiseMode? = null
+                var lastVolumeAdjustTime = 0L
 
                 while (isActive) {
                     val read = record.read(buf, 0, buf.size)
                     if (read > 0) {
+                        var sumSq = 0.0
                         var maxPeak = 0
                         for (i in 0 until read) {
-                            val abs = kotlin.math.abs(buf[i].toInt())
+                            val sample = buf[i].toInt()
+                            sumSq += sample * sample
+                            val abs = kotlin.math.abs(sample)
                             if (abs > maxPeak) maxPeak = abs
                         }
+                        val rms = sqrt(sumSq / read)
+                        val db = (20 * log10(rms.coerceAtLeast(1.0))).toInt().coerceIn(30, 105)
+                        ambientDecibels.value = db
 
                         val now = System.currentTimeMillis()
-                        if (maxPeak > 3500) {
-                            lastSpokenTime = now
-                            if (!isDucked) {
-                                duckMediaVolume(context)
-                                AudioEnhancer.applyTransparencyMode()
+
+                        // 1. Conversation Awareness
+                        if (conversationAwarenessEnabled.value) {
+                            if (maxPeak > 3500) {
+                                lastSpokenTime = now
+                                if (!isDucked) {
+                                    duckMediaVolume(context)
+                                    AudioEnhancer.applyTransparencyMode()
+                                }
+                            } else if (isDucked && (now - lastSpokenTime > 2500)) {
+                                restoreMediaVolume(context)
+                                setMode(context, _currentMode.value)
                             }
-                        } else if (isDucked && (now - lastSpokenTime > 2500)) {
-                            restoreMediaVolume(context)
-                            setMode(context, _currentMode.value)
+                        }
+
+                        // 2. Adaptive Audio Mode
+                        if (_currentMode.value == NoiseMode.ADAPTIVE) {
+                            val target = if (db > 62) NoiseMode.NOISE_CANCELLATION else NoiseMode.TRANSPARENCY
+                            if (target != lastAdaptiveTarget) {
+                                lastAdaptiveTarget = target
+                                if (target == NoiseMode.NOISE_CANCELLATION) {
+                                    AudioEnhancer.applyNoiseCancellationMode()
+                                } else {
+                                    AudioEnhancer.applyTransparencyMode()
+                                }
+                            }
+                        }
+
+                        // 3. Personalized Volume (Active volume adjustment with hysteresis)
+                        if (personalizedVolumeEnabled.value && (now - lastVolumeAdjustTime > 1800)) {
+                            lastVolumeAdjustTime = now
+                            handlePersonalizedVolume(context, db)
                         }
                     }
-                    delay(250)
+                    delay(150)
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Conversation awareness error: ${e.message}")
+                Log.w(TAG, "Audio monitor warning: ${e.message}")
             } finally {
                 try {
                     record?.stop()
                     record?.release()
-                } catch (e: Exception) {}
+                } catch (_: Exception) {}
             }
         }
+    }
+
+    private fun handlePersonalizedVolume(context: Context, db: Int) {
+        try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val currentVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+
+            // Hysteresis: only adapt when ambient noise has shifted noticeably
+            if (kotlin.math.abs(db - lastPersonalizedDb) < 7) return
+
+            if (db > 68 && currentVol < maxVol) {
+                // Loud environment (traffic, train, crowded room): gently raise volume
+                val step = if (db > 80 && currentVol + 2 <= maxVol) 2 else 1
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, currentVol + step, 0)
+                lastPersonalizedDb = db
+                Log.d(TAG, "Personalized Volume: Elevated music to ${currentVol + step} (ambient=$db dB)")
+            } else if (db < 46 && currentVol > 3) {
+                // Quiet environment (home, bedroom, library): soften music
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, currentVol - 1, 0)
+                lastPersonalizedDb = db
+                Log.d(TAG, "Personalized Volume: Softened music to ${currentVol - 1} (ambient=$db dB)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Personalized volume adjustment error: ${e.message}")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun toggleConversationAwareness(context: Context, enabled: Boolean) {
+        conversationAwarenessEnabled.value = enabled
+        if (!enabled) {
+            restoreMediaVolume(context)
+        }
+        updateAudioMonitor(context)
     }
 
     private fun duckMediaVolume(context: Context) {
@@ -244,25 +235,7 @@ object NoiseControlManager {
 
     fun togglePersonalizedVolume(context: Context, enabled: Boolean) {
         personalizedVolumeEnabled.value = enabled
-        personalizedVolumeJob?.cancel()
-        personalizedVolumeJob = null
-
-        if (!enabled) return
-
-        personalizedVolumeJob = scope.launch {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            while (isActive) {
-                val db = ambientDecibels.value
-                val currentVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-
-                if (db > 70 && currentVol < maxVol) {
-                    am.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVol + 1).coerceAtMost(maxVol), 0)
-                } else if (db < 40 && currentVol > 4) {
-                    am.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVol - 1).coerceAtLeast(1), 0)
-                }
-                delay(10000)
-            }
-        }
+        updateAudioMonitor(context)
+        Log.d(TAG, "Personalized volume toggled: $enabled")
     }
 }

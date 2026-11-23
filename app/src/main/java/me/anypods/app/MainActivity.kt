@@ -65,9 +65,23 @@ class MainActivity : ComponentActivity() {
         BluetoothTracker.refreshConnectedDevice()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleAudioSessionIntent(intent)
+    }
+
+    private fun handleAudioSessionIntent(intent: Intent?) {
+        val sessionId = intent?.getIntExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, 0) ?: 0
+        if (sessionId > 0) {
+            AudioEnhancer.registerSession(sessionId)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AudioEnhancer.initAudioEffects()
+        AudioEnhancer.initBalance(this)
+        handleAudioSessionIntent(intent)
         checkAndRequestPermissions()
         // Auto-check for updates from GitHub in the background
         UpdateManager.checkForUpdates(this, isManual = false)
@@ -183,7 +197,7 @@ class MainActivity : ComponentActivity() {
                     AudioEnhancer.setHeadphoneAccommodations(prof, intens)
                 },
                 onSetBalance = {
-                    AudioEnhancer.setAudioBalance(it)
+                    AudioEnhancer.setAudioBalance(this, it)
                 },
                 onFindMy = { left, right ->
                     AudioEnhancer.startFindMyTone(this, left, right)
@@ -564,55 +578,68 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 1. Independent Battery & Charging Calibration for ALL THREE (Left, Right, Case)
+            // 1. Live Hardware Battery & Charging Dashboard (100% Automated)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Battery & Charging Calibration",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Set exact individual battery levels and live ⚡ charging state for Left Pod, Right Pod, and Case.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Battery & Power",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Auto-synced with connected Bluetooth hardware",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onRefresh,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text("⚡ Sync", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // LEFT POD CONTROLS
-                    DeviceBatteryControlSection(
-                        title = "Left Earbud",
-                        level = state.leftBattery,
-                        isCharging = state.isLeftCharging,
-                        onLevelChange = { onSetLeftPod(it, state.isLeftCharging) },
-                        onChargingChange = { onSetLeftPod(state.leftBattery, it) }
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        // Left Pod
+                        BatteryIndicatorPill(
+                            label = "Left Pod",
+                            level = state.leftBattery,
+                            isCharging = state.isLeftCharging,
+                            statusText = if (state.isLeftCharging) "⚡ Charging" else "In Ear • Active"
+                        )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+                        // Case
+                        BatteryIndicatorPill(
+                            label = "Case",
+                            level = state.caseBattery,
+                            isCharging = state.isCaseCharging,
+                            statusText = if (state.isCaseCharging) "⚡ Charging" else "Ready • In Case"
+                        )
 
-                    // RIGHT POD CONTROLS
-                    DeviceBatteryControlSection(
-                        title = "Right Earbud",
-                        level = state.rightBattery,
-                        isCharging = state.isRightCharging,
-                        onLevelChange = { onSetRightPod(it, state.isRightCharging) },
-                        onChargingChange = { onSetRightPod(state.rightBattery, it) }
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-
-                    // CHARGING CASE CONTROLS
-                    DeviceBatteryControlSection(
-                        title = "Charging Case",
-                        level = state.caseBattery,
-                        isCharging = state.isCaseCharging,
-                        onLevelChange = { onSetCase(it, state.isCaseCharging) },
-                        onChargingChange = { onSetCase(state.caseBattery, it) }
-                    )
+                        // Right Pod
+                        BatteryIndicatorPill(
+                            label = "Right Pod",
+                            level = state.rightBattery,
+                            isCharging = state.isRightCharging,
+                            statusText = if (state.isRightCharging) "⚡ Charging" else "In Ear • Active"
+                        )
+                    }
                 }
             }
 
@@ -829,6 +856,7 @@ fun AnyPodsScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
+                    val ambientNoiseDb by NoiseControlManager.ambientDecibels.collectAsState()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -837,9 +865,11 @@ fun AnyPodsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Personalized Volume", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                             Text(
-                                "Automatically fine-tunes media volume based on ambient noise.",
+                                if (personalizedVolume) "⚡ Live Ambient: $ambientNoiseDb dB • Automatically fine-tuning volume"
+                                else "Automatically fine-tunes media volume based on ambient noise.",
                                 fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (personalizedVolume) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (personalizedVolume) FontWeight.Medium else FontWeight.Normal
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1567,6 +1597,50 @@ fun AnyPodsScreen(
                 }
             )
         }
+    }
+}
+
+@Composable
+fun BatteryIndicatorPill(
+    label: String,
+    level: Int,
+    isCharging: Boolean,
+    statusText: String
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { (level.coerceIn(0, 100) / 100f) },
+                modifier = Modifier.size(52.dp),
+                color = if (level > 20) Color(0xFF34C759) else Color(0xFFFF3B30),
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                strokeWidth = 4.5.dp
+            )
+            Text(
+                text = "$level%",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = statusText,
+            fontSize = 10.sp,
+            color = if (isCharging) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
