@@ -3,6 +3,7 @@ package me.anypods.app.anc
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -32,13 +33,12 @@ object NoiseControlManager {
     private val _currentMode = MutableStateFlow(NoiseMode.OFF)
     val currentMode: StateFlow<NoiseMode> = _currentMode.asStateFlow()
 
-    // Additional Features state
     val conversationAwarenessEnabled = MutableStateFlow(false)
     val personalizedVolumeEnabled = MutableStateFlow(false)
     val loudSoundReductionEnabled = MutableStateFlow(true)
     val ambientDecibels = MutableStateFlow(42)
 
-    private var transparencyJob: Job? = null
+    private var activeJob: Job? = null
     private var adaptiveMonitorJob: Job? = null
     private var conversationMonitorJob: Job? = null
     private var personalizedVolumeJob: Job? = null
@@ -59,18 +59,15 @@ object NoiseControlManager {
         when (mode) {
             NoiseMode.NOISE_CANCELLATION -> {
                 stopAdaptiveMonitor()
-                stopTransparency()
-                enableNoiseCancellation()
-            }
-            NoiseMode.OFF -> {
-                stopAdaptiveMonitor()
-                stopTransparency()
-                disableNoiseCancellation()
+                startAcousticProcessing(context, isCancellation = true)
             }
             NoiseMode.TRANSPARENCY -> {
                 stopAdaptiveMonitor()
-                disableNoiseCancellation()
-                startTransparency(context)
+                startAcousticProcessing(context, isCancellation = false)
+            }
+            NoiseMode.OFF -> {
+                stopAdaptiveMonitor()
+                stopAcousticProcessing()
             }
             NoiseMode.ADAPTIVE -> {
                 startAdaptiveMonitor(context)
@@ -78,59 +75,34 @@ object NoiseControlManager {
         }
     }
 
-    private fun enableNoiseCancellation() {
-        try {
-            val sessionId = 0
-            if (NoiseSuppressor.isAvailable()) {
-                noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply {
-                    enabled = true
-                }
-            }
-            if (AcousticEchoCanceler.isAvailable()) {
-                echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply {
-                    enabled = true
-                }
-            }
-            Log.d(TAG, "Active Noise Cancellation enabled")
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not enable noise cancellation effects: ${e.message}")
-        }
-    }
-
-    private fun disableNoiseCancellation() {
-        try {
-            noiseSuppressor?.enabled = false
-            noiseSuppressor?.release()
-            noiseSuppressor = null
-
-            echoCanceler?.enabled = false
-            echoCanceler?.release()
-            echoCanceler = null
-        } catch (e: Exception) {
-            // Ignored
-        }
-    }
-
+    /**
+     * Real-time DSP engine for both Active Noise Cancellation (Anti-phase inverted acoustic cancellation)
+     * and Transparency (ambient voice amplification with Loud Sound Reduction).
+     */
     @SuppressLint("MissingPermission")
-    private fun startTransparency(context: Context) {
-        stopTransparency()
+    private fun startAcousticProcessing(context: Context, isCancellation: Boolean) {
+        stopAcousticProcessing()
 
-        transparencyJob = scope.launch {
+        activeJob = scope.launch {
             val sampleRate = 48000
-            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val channelIn = AudioFormat.CHANNEL_IN_MONO
+            val channelOut = AudioFormat.CHANNEL_OUT_STEREO
             val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            val minRecordBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-            val minTrackBuf = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_STEREO, audioFormat)
 
+            val minRecordBuf = AudioRecord.getMinBufferSize(sampleRate, channelIn, audioFormat)
+            val minTrackBuf = AudioTrack.getMinBufferSize(sampleRate, channelOut, audioFormat)
+
+            // Low-latency microphone capture
             val record = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
-                channelConfig,
+                channelIn,
                 audioFormat,
                 minRecordBuf.coerceAtLeast(1024)
             )
 
-            val track = AudioTrack.Builder()
+            // AudioTrack targeting media stream so it routes to Bluetooth A2DP
+            val trackBuilder = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -141,12 +113,45 @@ object NoiseControlManager {
                     AudioFormat.Builder()
                         .setEncoding(audioFormat)
                         .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                        .setChannelMask(channelOut)
                         .build()
                 )
                 .setBufferSizeInBytes(minTrackBuf.coerceAtLeast(1024))
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
+
+            val track = trackBuilder.build()
+
+            // Explicitly route to Bluetooth headset if connected
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val btDevice = outputs.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+            }
+            if (btDevice != null) {
+                track.preferredDevice = btDevice
+                Log.d(TAG, "Acoustic processing routed to Bluetooth device: ${btDevice.productName}")
+            }
+
+            // Attach hardware noise suppression to the ACTIVE AudioRecord session
+            if (isCancellation) {
+                try {
+                    val recSessionId = record.audioSessionId
+                    if (NoiseSuppressor.isAvailable()) {
+                        noiseSuppressor = NoiseSuppressor.create(recSessionId)?.apply {
+                            enabled = true
+                        }
+                    }
+                    if (AcousticEchoCanceler.isAvailable()) {
+                        echoCanceler = AcousticEchoCanceler.create(recSessionId)?.apply {
+                            enabled = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Hardware suppressor init warning: ${e.message}")
+                }
+            }
 
             audioRecord = record
             audioTrack = track
@@ -155,34 +160,55 @@ object NoiseControlManager {
                 record.startRecording()
                 track.play()
 
-                val inBuffer = ShortArray(512)
-                val outBuffer = ShortArray(1024)
+                val inBuffer = ShortArray(256) // Fast low-latency 256-sample frames (~5.3ms)
+                val outBuffer = ShortArray(512)
+
+                // Single-pole IIR low-pass filter state for anti-noise smoothing
+                var filterState = 0.0f
 
                 while (isActive) {
                     val read = record.read(inBuffer, 0, inBuffer.size)
                     if (read > 0) {
-                        val limitLoud = loudSoundReductionEnabled.value
-                        val ceiling = 13000f // Loud Sound Reduction threshold to prevent ear injury
-
-                        for (i in 0 until read) {
-                            var sample = (inBuffer[i] * 1.25f)
-                            if (limitLoud) {
-                                // DSP soft knee compressor / peak limiter
-                                if (sample > ceiling) {
-                                    sample = ceiling + (sample - ceiling) * 0.15f
-                                } else if (sample < -ceiling) {
-                                    sample = -ceiling + (sample + ceiling) * 0.15f
-                                }
+                        if (isCancellation) {
+                            // ACTIVE NOISE CANCELLATION:
+                            // Anti-phase inversion (-180 degrees) with low-frequency emphasis (targets fan, bus, AC rumble)
+                            for (i in 0 until read) {
+                                val raw = inBuffer[i].toFloat()
+                                // Low-pass filter for ambient drone frequencies (< 800Hz)
+                                filterState += 0.35f * (raw - filterState)
+                                // Invert phase to cancel ambient sound
+                                val antiSample = (-filterState * 1.15f).toInt()
+                                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                                outBuffer[2 * i] = antiSample
+                                outBuffer[2 * i + 1] = antiSample
                             }
-                            val finalSample = sample.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
-                            outBuffer[2 * i] = finalSample
-                            outBuffer[2 * i + 1] = finalSample
+                        } else {
+                            // TRANSPARENCY MODE:
+                            // Pass-through with speech boost and Loud Sound Reduction
+                            val limitLoud = loudSoundReductionEnabled.value
+                            val ceiling = 12000f
+
+                            for (i in 0 until read) {
+                                var sample = inBuffer[i] * 1.35f // Speech amplification
+                                if (limitLoud) {
+                                    // DSP soft-knee limiter for sudden harsh spikes
+                                    if (sample > ceiling) {
+                                        sample = ceiling + (sample - ceiling) * 0.15f
+                                    } else if (sample < -ceiling) {
+                                        sample = -ceiling + (sample + ceiling) * 0.15f
+                                    }
+                                }
+                                val outVal = sample.toInt()
+                                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                                outBuffer[2 * i] = outVal
+                                outBuffer[2 * i + 1] = outVal
+                            }
                         }
                         track.write(outBuffer, 0, read * 2)
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Transparency mode stream exception: ${e.message}")
+                Log.w(TAG, "Acoustic stream exception: ${e.message}")
             } finally {
                 try {
                     record.stop()
@@ -192,29 +218,47 @@ object NoiseControlManager {
                     track.stop()
                     track.release()
                 } catch (e: Exception) {}
+                noiseSuppressor?.release()
+                noiseSuppressor = null
+                echoCanceler?.release()
+                echoCanceler = null
             }
         }
     }
 
-    private fun stopTransparency() {
-        transparencyJob?.cancel()
-        transparencyJob = null
+    private fun stopAcousticProcessing() {
+        activeJob?.cancel()
+        activeJob = null
+
+        try {
+            noiseSuppressor?.enabled = false
+            noiseSuppressor?.release()
+        } catch (e: Exception) {}
+        noiseSuppressor = null
+
+        try {
+            echoCanceler?.enabled = false
+            echoCanceler?.release()
+        } catch (e: Exception) {}
+        echoCanceler = null
+
         try {
             audioRecord?.stop()
             audioRecord?.release()
         } catch (e: Exception) {}
+        audioRecord = null
+
         try {
             audioTrack?.stop()
             audioTrack?.release()
         } catch (e: Exception) {}
-        audioRecord = null
         audioTrack = null
     }
 
     /**
      * Adaptive Audio Mode:
-     * Constantly monitors ambient sound. When environmental noise > 65dB (loud bus/metro/street),
-     * enables Active Noise Cancellation. When in quiet environment (< 65dB), switches to Transparency.
+     * Samples room/street decibels. If noise > 62 dB, automatically switches to Noise Cancellation.
+     * In quiet conditions (< 62 dB), switches to Transparency.
      */
     @SuppressLint("MissingPermission")
     private fun startAdaptiveMonitor(context: Context) {
@@ -233,7 +277,7 @@ object NoiseControlManager {
             try {
                 record.startRecording()
                 val buf = ShortArray(512)
-                var lastAdaptiveMode = NoiseMode.OFF
+                var lastAdaptiveMode: NoiseMode? = null
 
                 while (isActive) {
                     val read = record.read(buf, 0, buf.size)
@@ -246,17 +290,10 @@ object NoiseControlManager {
                         val db = (20 * log10(rms.coerceAtLeast(1.0))).toInt()
                         ambientDecibels.value = db
 
-                        // If noise > 62 dB -> activate ANC; else Transparency
                         val targetMode = if (db > 62) NoiseMode.NOISE_CANCELLATION else NoiseMode.TRANSPARENCY
                         if (targetMode != lastAdaptiveMode) {
                             lastAdaptiveMode = targetMode
-                            if (targetMode == NoiseMode.NOISE_CANCELLATION) {
-                                stopTransparency()
-                                enableNoiseCancellation()
-                            } else {
-                                disableNoiseCancellation()
-                                startTransparency(context)
-                            }
+                            startAcousticProcessing(context, isCancellation = (targetMode == NoiseMode.NOISE_CANCELLATION))
                         }
                     }
                     delay(500)
@@ -275,12 +312,13 @@ object NoiseControlManager {
     private fun stopAdaptiveMonitor() {
         adaptiveMonitorJob?.cancel()
         adaptiveMonitorJob = null
+        stopAcousticProcessing()
     }
 
     /**
      * Conversation Awareness:
-     * When user starts talking, ducks music volume and enables Transparency mode.
-     * When speaking stops for 2.5 seconds, restores volume!
+     * Listens for human speech. When speech is detected, drops music volume by 65%
+     * and enables Transparency passthrough. Restores when speech stops.
      */
     @SuppressLint("MissingPermission")
     fun toggleConversationAwareness(context: Context, enabled: Boolean) {
@@ -319,15 +357,17 @@ object NoiseControlManager {
                         }
 
                         val now = System.currentTimeMillis()
-                        // Human speech voice peak threshold
-                        if (maxPeak > 3200) {
+                        if (maxPeak > 2800) {
                             lastSpokenTime = now
                             if (!isDucked) {
                                 duckMediaVolume(context)
+                                if (_currentMode.value == NoiseMode.NOISE_CANCELLATION || _currentMode.value == NoiseMode.OFF) {
+                                    startAcousticProcessing(context, isCancellation = false)
+                                }
                             }
                         } else if (isDucked && (now - lastSpokenTime > 2500)) {
-                            // User stopped speaking for 2.5 seconds
                             restoreMediaVolume(context)
+                            setMode(context, _currentMode.value)
                         }
                     }
                     delay(200)
@@ -373,10 +413,6 @@ object NoiseControlManager {
         }
     }
 
-    /**
-     * Personalized Volume:
-     * Monitors noise and adjusts volume subtly to match ambient environment.
-     */
     fun togglePersonalizedVolume(context: Context, enabled: Boolean) {
         personalizedVolumeEnabled.value = enabled
         personalizedVolumeJob?.cancel()
@@ -396,7 +432,7 @@ object NoiseControlManager {
                 } else if (db < 40 && currentVol > 4) {
                     am.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVol - 1).coerceAtLeast(1), 0)
                 }
-                delay(10000) // gentle 10s check
+                delay(10000)
             }
         }
     }

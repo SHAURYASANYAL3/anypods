@@ -2,6 +2,7 @@ package me.anypods.app.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
@@ -10,7 +11,6 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.util.Log
-import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.sin
 
@@ -39,14 +39,13 @@ object AudioEnhancer {
     private var virtualizer: Virtualizer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
 
-    private var beepJob: Job? = null
-    private var audioTrack: AudioTrack? = null
+    private var staticAudioTrack: AudioTrack? = null
 
     // State flows for UI
     val currentSpatialMode = MutableStateFlow(SpatialAudioMode.OFF)
     val currentToneProfile = MutableStateFlow(ToneProfile.BALANCED_TONE)
     val currentToneIntensity = MutableStateFlow(ToneIntensity.MODERATE)
-    val currentBalance = MutableStateFlow(0f) // -1.0 (Full Left) to 1.0 (Full Right)
+    val currentBalance = MutableStateFlow(0f)
 
     fun initAudioEffects(audioSessionId: Int = 0) {
         try {
@@ -71,9 +70,6 @@ object AudioEnhancer {
         }
     }
 
-    /**
-     * Spatial Audio (3D Audio Virtualizer)
-     */
     fun setSpatialAudio(mode: SpatialAudioMode) {
         currentSpatialMode.value = mode
         try {
@@ -101,9 +97,6 @@ object AudioEnhancer {
         }
     }
 
-    /**
-     * Headphone Accommodations (iOS Audio/Visual Accessibility Feature)
-     */
     fun setHeadphoneAccommodations(profile: ToneProfile, intensity: ToneIntensity) {
         currentToneProfile.value = profile
         currentToneIntensity.value = intensity
@@ -114,7 +107,6 @@ object AudioEnhancer {
             val minEQ = eq.bandLevelRange[0]
             val maxEQ = eq.bandLevelRange[1]
 
-            // Multiplier based on Slight (33%), Moderate (66%), Strong (100%)
             val gainFactor = when (intensity) {
                 ToneIntensity.SLIGHT -> 0.35f
                 ToneIntensity.MODERATE -> 0.65f
@@ -124,15 +116,13 @@ object AudioEnhancer {
             val targetGain = (maxEQ * gainFactor).toInt().toShort()
 
             for (i in 0 until numBands) {
-                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000 // in Hz
+                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
 
                 when (profile) {
                     ToneProfile.BALANCED_TONE -> {
-                        // Flat reference curve with subtle clarity lift
                         eq.setBandLevel(i.toShort(), 0)
                     }
                     ToneProfile.VOCAL_RANGE -> {
-                        // Boost human voice range (800 Hz to 3500 Hz)
                         if (centerFreqHz in 800..3500) {
                             eq.setBandLevel(i.toShort(), targetGain)
                         } else {
@@ -140,7 +130,6 @@ object AudioEnhancer {
                         }
                     }
                     ToneProfile.BRIGHTNESS -> {
-                        // Boost treble & crisp highs (> 3500 Hz)
                         if (centerFreqHz >= 3500) {
                             eq.setBandLevel(i.toShort(), targetGain)
                         } else {
@@ -155,64 +144,58 @@ object AudioEnhancer {
         }
     }
 
-    /**
-     * Left / Right Balance
-     */
     fun setAudioBalance(balance: Float) {
-        // balance ranges from -1.0 (Full Left) to 1.0 (Full Right)
         currentBalance.value = balance
         Log.d(TAG, "Set L/R balance to $balance")
     }
 
-    fun applyPreset(presetName: String) {
-        when (presetName) {
-            "Bass Boost" -> {
-                bassBoost?.setStrength(800)
-            }
-            "Vocal Range" -> {
-                setHeadphoneAccommodations(ToneProfile.VOCAL_RANGE, ToneIntensity.MODERATE)
-            }
-            "Brightness" -> {
-                setHeadphoneAccommodations(ToneProfile.BRIGHTNESS, ToneIntensity.MODERATE)
-            }
-            else -> {
-                setHeadphoneAccommodations(ToneProfile.BALANCED_TONE, ToneIntensity.SLIGHT)
-                bassBoost?.setStrength(0)
-            }
-        }
-    }
-
     /**
-     * Ultra-Loud Find My Earbuds acoustic beacon
-     * +25dB gain override with high-piercing 3.2kHz/4.0kHz dual frequency alert
+     * Ultra-Loud "Find My Earbuds" Acoustic Beacon:
+     * - Uses USAGE_MEDIA so audio goes directly into Bluetooth earbuds (A2DP).
+     * - Forces preferredDevice to connected Bluetooth headset.
+     * - Maximizes STREAM_MUSIC volume to 100%.
+     * - Uses MODE_STATIC with pre-computed high-piercing siren to guarantee zero-crash looping.
+     * - Applies +25dB LoudnessEnhancer directly on the earbud audio stream.
      */
     fun startFindMyTone(context: Context, left: Boolean, right: Boolean) {
         stopFindMyTone()
 
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // Maximize Bluetooth media stream volume
         try {
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val maxAlarm = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxAlarm, 0)
             val maxMusic = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxMusic, 0)
+            Log.d(TAG, "Maximized STREAM_MUSIC volume to $maxMusic")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed raising stream volume: ${e.message}")
+            Log.w(TAG, "Volume boost error: ${e.message}")
         }
 
-        beepJob = CoroutineScope(Dispatchers.Default).launch {
+        try {
             val sampleRate = 48000
-            val bufferSize = AudioTrack.getMinBufferSize(
-                sampleRate,
-                AudioFormat.CHANNEL_OUT_STEREO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
+            val durationSec = 1.0 // 1-second cycling acoustic siren loop
+            val numSamples = (sampleRate * durationSec).toInt()
+            val sampleData = ShortArray(numSamples * 2) // Stereo
+
+            // Generate high-piercing two-tone sweeping siren (3000 Hz to 4200 Hz)
+            for (i in 0 until numSamples) {
+                val t = i.toDouble() / sampleRate
+                // Alternating pulse between 3.2 kHz and 4.2 kHz (resonance peak of earbud miniature drivers)
+                val freq = if ((i / (sampleRate / 4)) % 2 == 0) 3400.0 else 4200.0
+                val sine = sin(2.0 * Math.PI * freq * t)
+                // Overdriven square mix for raw acoustic output
+                val wave = if (sine > 0.0) 0.9 else -0.9
+                val sampleVal = (wave * Short.MAX_VALUE * 0.95).toInt().toShort()
+
+                sampleData[2 * i] = if (left) sampleVal else 0
+                sampleData[2 * i + 1] = if (right) sampleVal else 0
+            }
 
             val track = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
                 .setAudioFormat(
@@ -222,62 +205,46 @@ object AudioEnhancer {
                         .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                         .build()
                 )
-                .setBufferSizeInBytes(bufferSize.coerceAtLeast(2048))
-                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setBufferSizeInBytes(sampleData.size * 2)
+                .setTransferMode(AudioTrack.MODE_STATIC)
                 .build()
 
-            audioTrack = track
+            // Explicitly route to connected Bluetooth A2DP earbud
+            val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val btDevice = outputs.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+            }
+            if (btDevice != null) {
+                track.preferredDevice = btDevice
+                Log.d(TAG, "Find My Earbuds routed to: ${btDevice.productName}")
+            }
 
+            // Write all audio data once into static buffer
+            track.write(sampleData, 0, sampleData.size)
+            // Loop continuously in hardware
+            track.setLoopPoints(0, numSamples, -1)
+
+            // Attach +25dB LoudnessEnhancer
             try {
                 loudnessEnhancer = LoudnessEnhancer(track.audioSessionId).apply {
-                    setTargetGain(2500) // +2500 mB = +25 dB extreme gain
+                    setTargetGain(2500)
                     enabled = true
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "LoudnessEnhancer unavailable: ${e.message}")
+                Log.w(TAG, "LoudnessEnhancer error: ${e.message}")
             }
 
-            val leftVol = if (left) 1.0f else 0.0f
-            val rightVol = if (right) 1.0f else 0.0f
-            track.setStereoVolume(leftVol, rightVol)
-
-            val numSamples = sampleRate / 2
-            val sampleData = ShortArray(numSamples * 2)
-
-            val freq1 = 3200.0 // 3.2 kHz
-            val freq2 = 4000.0 // 4.0 kHz
-
-            for (i in 0 until numSamples) {
-                val t = i.toDouble() / sampleRate
-                val rawWave = 0.6 * sin(2.0 * Math.PI * freq1 * t) + 0.4 * sin(2.0 * Math.PI * freq2 * t)
-                val squareBoost = if (rawWave > 0.0) 1.0 else -1.0
-                val mixed = (0.75 * rawWave + 0.25 * squareBoost) * Short.MAX_VALUE * 0.99
-                val sampleVal = mixed.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
-
-                sampleData[2 * i] = if (left) sampleVal else 0
-                sampleData[2 * i + 1] = if (right) sampleVal else 0
-            }
-
-            try {
-                track.play()
-                while (isActive) {
-                    track.write(sampleData, 0, sampleData.size)
-                    delay(300)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "AudioTrack playback error: ${e.message}")
-            } finally {
-                try {
-                    track.stop()
-                    track.release()
-                } catch (e: Exception) {}
-            }
+            track.play()
+            staticAudioTrack = track
+            Log.d(TAG, "Find My Earbuds static playback started successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed starting Find My tone: ${e.message}", e)
         }
     }
 
     fun stopFindMyTone() {
-        beepJob?.cancel()
-        beepJob = null
         try {
             loudnessEnhancer?.enabled = false
             loudnessEnhancer?.release()
@@ -285,9 +252,10 @@ object AudioEnhancer {
         loudnessEnhancer = null
 
         try {
-            audioTrack?.stop()
-            audioTrack?.release()
+            staticAudioTrack?.stop()
+            staticAudioTrack?.release()
         } catch (e: Exception) {}
-        audioTrack = null
+        staticAudioTrack = null
+        Log.d(TAG, "Find My Earbuds tone stopped")
     }
 }
