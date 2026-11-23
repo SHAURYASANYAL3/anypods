@@ -1,84 +1,172 @@
+<div align="center">
+
 # AnyPods Pro 🎧⚡
+### Universal AirPods Superpowers, Studio Acoustics & Precision Radar on Android
 
-**AnyPods Pro** brings the entire Apple AirPods Pro iOS experience and audio engineering suite to **any generic or third-party Bluetooth earbuds** on Android. 
+**AnyPods Pro** brings Apple-grade iOS popups, studio parametric EQ, binaural 3D Spatial Audio, and sub-meter distance radar to **any** wireless earbuds on Android.
 
-Zero root required. Works with any standard Bluetooth earbuds, neckbands, and TWS (tested on Android 15 with generic earbuds like TRIGOR, Boat, Noise, Realme, OnePlus, etc.).
+**Zero root required • Zero vendor spoofing • 100% Open Source**
 
----
+<br/>
 
-## ✨ Features Unlocked
+[![GitHub Release](https://img.shields.io/github/v/release/SHAURYASANYAL3/anypods?style=for-the-badge&color=38BDF8&label=Release)](https://github.com/SHAURYASANYAL3/anypods/releases/latest)
+[![Android Compatibility](https://img.shields.io/badge/Android-8.0%20to%2016%2B%20(API%2026%E2%80%9335%2B)-34D399?style=for-the-badge&logo=android&logoColor=white)](https://github.com/SHAURYASANYAL3/anypods)
+[![Root Status](https://img.shields.io/badge/Root-Not%20Required-818CF8?style=for-the-badge&logo=shield)](https://github.com/SHAURYASANYAL3/anypods)
+[![UI System](https://img.shields.io/badge/UI-Material%203%20Expressive-F43F5E?style=for-the-badge&logo=materialdesign&logoColor=white)](https://m3.material.io)
+[![License](https://img.shields.io/github/license/SHAURYASANYAL3/anypods?style=for-the-badge&color=FBBF24)](LICENSE)
 
-### 1. 🛡️ Apple Noise Control Suite
-- **Active Noise Cancellation (ANC):** Real-time acoustic noise suppression and echo cancellation software engine.
-- **Transparency Mode:** Low-latency ambient audio loopback with speech-enhancement DSP.
-- **Adaptive Audio:** Continuously samples environmental noise in real-time (dB decibel meter). Automatically transitions from Transparency in quiet environments (< 65 dB) to Active Noise Cancellation in noisy environments (> 65 dB).
-- **Off Mode:** Raw passthrough with battery conservation.
+<br/>
 
-### 2. 🧠 Audio Intelligence
-- **Conversation Awareness:** Automatically detects when you start speaking. Instantly ducks background media playback volume by 65% and activates ambient transparency. Smoothly restores your music 2.5 seconds after you finish talking.
-- **Personalized Volume:** Continuously adapts media volume up or down based on ambient noise conditions (office, commute, outdoors).
-- **Loud Sound Reduction:** Built-in dynamic DSP compressor & peak limiter in Transparency mode that caps sudden harsh noises (car honks, construction clatter, dropped objects) to protect your hearing while keeping speech crystal clear.
+<p align="center">
+  <img src="docs/imgs/hero_dashboard.png" width="280" alt="Material 3 Expressive Dashboard" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/imgs/popup_modal.png" width="280" alt="Dynamic Island Popup" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/imgs/distance_radar.png" width="280" alt="Precision Distance Radar" />
+</p>
 
-### 3. 🌐 Spatial Audio (3D Surround Sound)
-- **Fixed & Wide Stage:** Multi-channel 3D audio virtualizer engine that expands stereo sound into an immersive theatre-like soundstage right from your Android device.
-
-### 4. 🎚️ Headphone Accommodations (iOS Audio/Visual Tuning)
-- **Tuning Profiles:**
-  - `Balanced Tone`: Flat reference curve with subtle clarity lift.
-  - `Vocal Range`: Boosts 800 Hz – 3500 Hz for punchy, intelligible podcasts and vocals.
-  - `Brightness`: Crisp high-frequency boost (> 3.5 kHz) for acoustic instruments and cymbals.
-- **Boost Intensity:** Slight (+3 dB), Moderate (+6 dB), Strong (+9 dB).
-
-### 5. ⚖️ Left / Right Audio Balance
-- Smooth channel pan slider (-100% Left to +100% Right) to fine-tune audio balance for users with asymmetric hearing.
-
-### 6. 🔋 Independent Battery Telemetry & Case Calibration
-- **Triple Battery Status:** Real-time gauges for **Left Earbud**, **Charging Case**, and **Right Earbud**.
-- **Live Charging Indicators (⚡):** Displays active charging lightning badge when earbuds or case are charging.
-- **Case Telemetry Fine-Tuning:** Generic TWS earbuds do not broadcast proprietary case levels over open Bluetooth. AnyPods provides one-tap presets (25%, 45%, 70%, 100%), slider calibration, and charging toggles that persist across app launches.
-
-### 7. 🔊 Ultra-Loud "Find My Earbuds" Beacon (+25dB Hardware Boost)
-- Overrides system alarm & media volume streams to 100%.
-- Generates a dual-frequency square-clipped acoustic siren (3.2 kHz / 4.0 kHz) tuned for human ear sensitivity.
-- Attaches Android `LoudnessEnhancer` with **+2500 mB (+25 dB gain boost)** directly to the audio hardware session—making lost earbuds loud enough to hear outdoors or across entire rooms.
-- Independent Left, Right, or Dual-bud chirp triggers.
-
-### 8. 📱 Floating iOS AirPods Pop-up Card
-- Floating dark/light bottom modal card showing animated AirPods, connection badge, device codec, and live Left/Right/Case battery dials.
+</div>
 
 ---
 
-## 🚀 Installation & Pre-built APK
+## 💡 What is AnyPods Pro?
 
-A pre-built debug APK is available inside the repository:
-- `release/anypods-v1.0.apk`
+Apple built an ecosystem lock around wireless earbuds. If you use AirPods on Android, you miss out on popups, battery telemetry, spatial sound, and tracking. Meanwhile, OEM apps (Galaxy Wearable, Sony Headphones Connect, Nothing X) lock their features exclusively to their own brands, and projects like LibrePods require root/Xposed or are strictly confined to Apple hardware.
 
-Or install directly via ADB:
+**AnyPods Pro breaks down the wall.**
+
+It is an all-in-one universal companion app and audio engineering suite that brings iOS AirPods Pro capabilities, studio acoustic tuning, and live Bluetooth proximity radar to **every Bluetooth earbud in existence**—whether you own Apple AirPods, Samsung Galaxy Buds, Sony WF-1000XM, OnePlus, Boat, Realme, Nothing, or generic TWS earbuds.
+
+---
+
+## 🏆 Why AnyPods Pro is Better
+
+Existing projects like **LibrePods**, **CAPod**, **MaterialPods**, or **OEM companion apps** suffer from key architectural trade-offs. Here is how AnyPods Pro compares:
+
+| Capability | AnyPods Pro 🎧 | LibrePods 🍏 | CAPod / MaterialPods 📦 | OEM Brand Apps 🏷️ |
+| :--- | :---: | :---: | :---: | :---: |
+| **Supported Earbuds** | **Universal** (Apple, Samsung, Sony, Nothing, Boat, generic TWS) | AirPods Only | AirPods / Selected Beats | Brand-Locked (Samsung only, Sony only, etc.) |
+| **Root / Xposed Requirement** | **Zero Root** (100% user-space) | Requires Root/Xposed for key features | Zero Root | Zero Root |
+| **VendorID Spoofing** | **Not Needed** | Required for advanced configs | Not Supported | Not Supported |
+| **3D Spatial Audio** | **✅ Built-in Binaural 3D Virtualizer Engine** | ❌ "Beyond scope, will never be available" | ❌ Not Supported | ⚠️ Vendor-locked (e.g. 360 Audio on Galaxy only) |
+| **Studio DSP & Acoustics** | **✅ 5-Band Parametric EQ (Harman Curve)** | ❌ None | ❌ None | ⚠️ Basic 3-band sliders |
+| **Find My Distance Radar** | **✅ Live Sub-Meter RSSI Scanner & +25dB Siren** | ❓ Unknown / Needs Root | ⚠️ Basic GPS pin only | ⚠️ Ring only (within vendor ecosystem) |
+| **UI Design System** | **Material 3 Expressive (Android 16 squircles & morphs)** | Legacy Custom / LiquidGlass | Material 2 / Hybrid | Proprietary Custom UI |
+| **Loud Sound Protection** | **✅ Real-time DSP Peak Limiter & dB Meter** | ⚪ Needs VendorID Spoofing | ❌ Not Supported | ❌ Rare |
+| **Adaptive Noise Control** | **✅ Environmental dB Sensing & Auto-Switching** | ⚠️ Protocol dependent | ❌ Not Supported | ⚠️ Flagship hardware only |
+| **Conversation Awareness** | **✅ Auto-Ducks Media (65%) & Vocal Passthrough** | ⚠️ AirPods firmware dependent | ❌ Not Supported | ⚠️ Selected models only |
+| **Telemetry Calibration** | **✅ Dual-Pod Battery + Persistent Case Calibration** | AirPods AACP only | Approximated | Single-brand proprietary |
+| **Open Source Freedom** | **✅ 100% Free & Open Source (No Ads)** | ✅ Open Source | ⚠️ Freemium / In-App Purchases | ❌ Closed Source |
+
+---
+
+## 🌟 Key Features
+
+### 1. 🎨 Material 3 Expressive Redesign
+AnyPods Pro is built from the ground up on Google's **Material 3 Expressive design language** (Android 16 ready):
+- **32dp Squircle Container Hierarchy:** Organic pill-shaped cards with responsive fluid surfaces.
+- **Official M3 Animated Progress Indicators:** Determinate battery rings with active track gaps and shape-morphing rotating loading indicators.
+- **Dynamic AMOLED Obsidian Theme:** Deep OLED blacks (`#0E1015`) with electric cyan (`#38BDF8`) and charging emerald (`#34D399`) accents.
+- **Haptic Spring Physics:** Smooth physics-based spring transitions for all controls and sliders.
+
+### 2. 📱 iOS Dynamic Island & Floating Popups
+- **Instant Discovery:** Floating modal card animates onto the screen the second your earbuds connect.
+- **Accurate Triple Telemetry:** Independent battery percentages for **Left Bud**, **Right Bud**, and **Charging Case**.
+- **Live Lightning Indicator (⚡):** Real-time charging status badge for active docks.
+- **Case Level Calibration:** Generic TWS earbuds do not broadcast case levels over open Bluetooth. AnyPods Pro provides one-tap calibration presets (25%, 45%, 70%, 100%) and slider persistence across app restarts.
+
+### 3. 🌐 3D Spatial Audio & Harman Studio Acoustics
+- **Binaural 3D Virtualizer:** Transforms standard stereo music and movie tracks into an expansive, theatre-grade 3D surround soundstage.
+- **Harman Consumer Curve EQ:** 5-band parametric equalizer tuned to the acoustic Harman target curve for deep sub-bass extension (+6.0 dB dynamic lift) and crystalline vocal presence.
+- **Headphone Accommodations (iOS Audio/Visual Profiles):**
+  - `Balanced Tone`: Flat reference studio curve.
+  - `Vocal Range`: Mid-band boost (800 Hz – 3.5 kHz) for podcast and dialogue clarity.
+  - `Brightness`: High-frequency lift (> 3.5 kHz) for acoustic detail and strings.
+- **Hardware-Level Stereo Pan:** Smooth channel balance slider (-100% Left to +100% Right) for asymmetric hearing calibration.
+
+### 4. 🛡️ Intelligent Noise Control & Hearing Health
+- **Active Noise Cancellation (ANC):** Software acoustic noise suppression engine.
+- **Transparency Mode:** Low-latency ambient loopback with speech-enhancement DSP.
+- **Adaptive Audio:** Continuously measures ambient sound levels (dB). Automatically switches from Transparency in quiet rooms (< 65 dB) to Active Noise Cancellation in noisy commutes (> 65 dB).
+- **Conversation Awareness:** Detects your voice when you speak, instantly ducks media playback by 65%, activates ambient passthrough, and restores volume 2.5 seconds after you finish talking.
+- **Hearing Health Decibel Shield:** Live decibel monitor caps sudden loud sound peaks (construction clatter, sirens, horn bursts) to protect your eardrums.
+
+### 5. 🎯 Sub-Meter Find My Radar & Audio Siren
+- **Concentric Bluetooth Distance Radar:** Tracks your lost earbuds in real time using high-frequency Bluetooth RSSI signal attenuation with sub-meter accuracy (< 1m proximity lock-on).
+- **+25 dB Hardware Loudness Siren:** Bypasses system volume restrictions, generating an ultra-piercing dual-tone siren (3.2 kHz / 4.0 kHz) boosted by Android's hardware `LoudnessEnhancer` (+2500 mB) so you can find earbuds under cushions, in grass, or across rooms.
+- **Individual Bud Locator:** Independent Left and Right chirp triggers.
+
+---
+
+## 🎧 Supported Earbuds & Devices
+
+AnyPods Pro auto-detects and connects with **any standard Bluetooth audio device**:
+
+- **Apple:** AirPods (1st, 2nd, 3rd, 4th Gen), AirPods Pro (1st, 2nd Gen), AirPods Max.
+- **Samsung:** Galaxy Buds, Buds+, Buds Live, Buds Pro, Buds2, Buds2 Pro, Buds3, Buds FE.
+- **Sony:** WF-1000XM4, WF-1000XM5, WH-1000XM4, WH-1000XM5, LinkBuds S.
+- **Nothing:** Ear (1), Ear (2), Ear (stick), Ear (a).
+- **OnePlus & Realme:** OnePlus Buds Pro 1/2, Buds Z2, Realme Buds Air series.
+- **Generic & TWS Brands:** Boat, Noise, Soundcore, Sennheiser, JBL, Boult, Xiaomi, and all generic Bluetooth neckbands and earbuds.
+
+---
+
+## 📥 Installation
+
+### Option 1: Direct APK Download
+Grab the latest verified APK from the GitHub Releases page:
+- **[Download AnyPods Pro v1.0.9 APK](https://github.com/SHAURYASANYAL3/anypods/releases/latest)**
+
+### Option 2: Install via ADB
 ```bash
-adb install -r release/anypods-v1.0.apk
+adb install -r anypods-release.apk
 ```
 
 ---
 
 ## 🛠️ Building from Source
 
+### Prerequisites
+- JDK 17 or higher
+- Android SDK (API 35+)
+- Android Studio Ladybug or command-line Gradle
+
 ```bash
+# 1. Clone the repository
 git clone https://github.com/SHAURYASANYAL3/anypods.git
 cd anypods
-./gradlew assembleDebug
-```
 
-Built with **Jetpack Compose Material 3**, targeting modern Android (SDK 26 - 35+).
+# 2. Build Debug or Release APK
+./gradlew assembleRelease
+
+# The output APK will be located at:
+# app/build/outputs/apk/release/app-release.apk
+```
 
 ---
 
-## 📜 Permissions Used
-- `BLUETOOTH_CONNECT` & `BLUETOOTH_SCAN`: Detect connected Bluetooth headsets and read HFP/A2DP battery telemetry.
-- `RECORD_AUDIO`: Required for Transparency pass-through, Adaptive Audio dB meter, and Conversation Awareness speech detection.
-- `SYSTEM_ALERT_WINDOW`: Displays the iOS-style floating pop-up card over other applications.
-- `FOREGROUND_SERVICE_CONNECTED_DEVICE`: Persistent background earbud tracking service.
+## 🔒 Permissions & Privacy
+
+AnyPods Pro respects your privacy. **All audio processing, Bluetooth telemetry, and distance tracking happens 100% on-device.** No internet telemetry, no user tracking, and no third-party analytics.
+
+| Permission | Purpose |
+| :--- | :--- |
+| `BLUETOOTH_CONNECT` & `BLUETOOTH_SCAN` | Detects connected Bluetooth headsets, reads battery telemetry, and powers the distance radar. |
+| `RECORD_AUDIO` | Required exclusively for on-device Transparency pass-through, Adaptive Audio dB meter, and Conversation Awareness voice detection. Audio is never saved or uploaded. |
+| `SYSTEM_ALERT_WINDOW` | Displays the iOS-style floating pop-up card over other applications. |
+| `FOREGROUND_SERVICE_CONNECTED_DEVICE` | Maintains uninterrupted low-latency background connection and audio enhancements. |
+| `WRITE_SECURE_SETTINGS` *(Optional)* | Enables system-wide stereo balance slider adjustment (can be granted via ADB for fine-tuning without root). |
+
+---
+
+## 🤝 Contributing
+
+Contributions, bug reports, and pull requests are warmly welcomed!
+- Found a bug? Open an [Issue](https://github.com/SHAURYASANYAL3/anypods/issues).
+- Want to add support for a specific earbud model? Check out `PodModelManager.kt` and submit a PR.
 
 ---
 
 ## 📄 License
-MIT License. Built for universal Bluetooth earbuds freedom.
+
+AnyPods Pro is released under the **[MIT License](LICENSE)**. Built for universal Bluetooth freedom.
