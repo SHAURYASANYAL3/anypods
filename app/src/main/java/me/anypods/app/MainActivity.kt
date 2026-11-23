@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import me.anypods.app.anc.NoiseControlManager
 import me.anypods.app.anc.NoiseMode
+import me.anypods.app.audio.AncIntensity
 import me.anypods.app.audio.AudioEnhancer
 import me.anypods.app.audio.SpatialAudioMode
 import me.anypods.app.audio.ToneIntensity
@@ -83,6 +84,8 @@ class MainActivity : ComponentActivity() {
             val toneProfile by AudioEnhancer.currentToneProfile.collectAsState()
             val toneIntensity by AudioEnhancer.currentToneIntensity.collectAsState()
             val lrBalance by AudioEnhancer.currentBalance.collectAsState()
+            val ancIntensity by AudioEnhancer.currentAncIntensity.collectAsState()
+            val antiHiss by AudioEnhancer.antiHissWindReduction.collectAsState()
 
             val updateInfo by UpdateManager.updateAvailable.collectAsState()
             val isCheckingUpdate by UpdateManager.isChecking.collectAsState()
@@ -99,6 +102,8 @@ class MainActivity : ComponentActivity() {
             AnyPodsScreen(
                 state = earbudState,
                 currentNoiseMode = noiseMode,
+                ancIntensity = ancIntensity,
+                antiHiss = antiHiss,
                 conversationAwareness = convAwareness,
                 personalizedVolume = personalizedVol,
                 loudSoundReduction = loudReduction,
@@ -237,6 +242,8 @@ class MainActivity : ComponentActivity() {
 fun AnyPodsScreen(
     state: EarbudState,
     currentNoiseMode: NoiseMode,
+    ancIntensity: AncIntensity,
+    antiHiss: Boolean,
     conversationAwareness: Boolean,
     personalizedVolume: Boolean,
     loudSoundReduction: Boolean,
@@ -683,6 +690,106 @@ fun AnyPodsScreen(
                             modifier = Modifier.weight(1f),
                             onClick = { onSelectNoiseMode(NoiseMode.ADAPTIVE) }
                         )
+                    }
+
+                    // --- Advanced ANC Intensity & Acoustic Seal Tuning ---
+                    if (currentNoiseMode == NoiseMode.NOISE_CANCELLATION) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Cancellation Strength",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Surface(
+                                color = Color(0xFFE8F5E9),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = when (ancIntensity) {
+                                        AncIntensity.ULTRA -> "⚡ 98% Studio Seal"
+                                        AncIntensity.BALANCED -> "⚡ 85% Commute"
+                                        AncIntensity.COMFORT -> "⚡ 68% Gentle"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Intensity level selector chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                Triple("Ultra Studio", "Max isolation (-30 dB)", AncIntensity.ULTRA),
+                                Triple("Balanced", "Commute (-22 dB)", AncIntensity.BALANCED),
+                                Triple("Comfort", "No ear pressure (-15 dB)", AncIntensity.COMFORT)
+                            ).forEach { (title, subtitle, intensity) ->
+                                val isSel = ancIntensity == intensity
+                                Surface(
+                                    color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { AudioEnhancer.setAncIntensity(intensity) }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = title,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = subtitle,
+                                            fontSize = 9.sp,
+                                            color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Anti-Hiss & Wind Shield Filter Toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Anti-Hiss & Wind Guard", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(
+                                    "Filters out background white noise, DAC hiss, and air friction.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = antiHiss,
+                                onCheckedChange = { AudioEnhancer.setAntiHissWindReduction(it) }
+                            )
+                        }
                     }
                 }
             }

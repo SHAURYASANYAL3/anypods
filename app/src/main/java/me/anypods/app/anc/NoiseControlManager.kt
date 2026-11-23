@@ -46,12 +46,18 @@ object NoiseControlManager {
         Log.d(TAG, "Setting Noise Mode to: $mode")
 
         // Play Apple acoustic feedback chime
+        // Dispatch hardware listening mode to connected Bluetooth headset if supported
+        me.anypods.app.bluetooth.BluetoothTracker.sendHardwareListeningMode(mode)
+
         when (mode) {
             NoiseMode.NOISE_CANCELLATION -> me.anypods.app.audio.AppleSoundChimes.playAncWhoosh(context)
             NoiseMode.TRANSPARENCY -> me.anypods.app.audio.AppleSoundChimes.playTransparencyTone(context)
             NoiseMode.ADAPTIVE -> me.anypods.app.audio.AppleSoundChimes.playAdaptiveTone(context)
             NoiseMode.OFF -> me.anypods.app.audio.AppleSoundChimes.playOffTone(context)
         }
+
+        // Dispatch hardware listening mode to connected Bluetooth headset if supported
+        me.anypods.app.bluetooth.BluetoothTracker.sendHardwareListeningMode(mode)
 
         when (mode) {
             NoiseMode.NOISE_CANCELLATION -> {

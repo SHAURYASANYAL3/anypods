@@ -35,6 +35,12 @@ enum class ToneIntensity {
     STRONG
 }
 
+enum class AncIntensity {
+    ULTRA,      // Deep Vacuum Studio Seal (Max Isolation, -90% ambient penetration)
+    BALANCED,   // Commute / Daily (High Isolation, balanced acoustic pressure)
+    COMFORT     // Gentle / Zero Pressure (Airy isolation, eliminates eardrum fatigue)
+}
+
 object AudioEnhancer {
     private const val TAG = "AnyPods.AudioEnhancer"
     private var equalizer: Equalizer? = null
@@ -52,6 +58,8 @@ object AudioEnhancer {
     val currentToneProfile = MutableStateFlow(ToneProfile.BALANCED_TONE)
     val currentToneIntensity = MutableStateFlow(ToneIntensity.MODERATE)
     val currentBalance = MutableStateFlow(0f)
+    val currentAncIntensity = MutableStateFlow(AncIntensity.ULTRA)
+    val antiHissWindReduction = MutableStateFlow(true)
 
     fun initAudioEffects(audioSessionId: Int = 0) {
         try {
@@ -106,16 +114,33 @@ object AudioEnhancer {
                 // --- Noise Mode Component ---
                 when (activeNoiseMode) {
                     "ANC" -> {
+                        val ancMult = when (currentAncIntensity.value) {
+                            AncIntensity.ULTRA -> 1.0f
+                            AncIntensity.BALANCED -> 0.72f
+                            AncIntensity.COMFORT -> 0.45f
+                        }
                         when {
-                            centerFreqHz < 350 -> combinedGainFraction += 0.55f // Sub-bass seal mask
-                            centerFreqHz in 700..2200 -> combinedGainFraction -= 0.35f // Ambient speech notch
-                            else -> combinedGainFraction += 0.15f
+                            // 1. Deep Sub-bass acoustic vacuum seal & anti-rumble (low engine, drone & AC hum)
+                            centerFreqHz < 160 -> combinedGainFraction += (0.75f * ancMult)
+                            // 2. Mid-bass body acoustic damping (160 - 380 Hz)
+                            centerFreqHz in 160..380 -> combinedGainFraction += (0.35f * ancMult)
+                            // 3. Deep ambient voice, traffic & room chatter cancellation notch (450 - 3400 Hz)
+                            centerFreqHz in 450..3400 -> combinedGainFraction -= (0.72f * ancMult)
+                            // 4. Anti-hiss ceiling (> 5500 Hz) silences high-frequency white noise & DAC hiss
+                            centerFreqHz > 5500 -> {
+                                if (antiHissWindReduction.value) {
+                                    combinedGainFraction -= (0.28f * ancMult)
+                                } else {
+                                    combinedGainFraction += 0.05f
+                                }
+                            }
+                            else -> combinedGainFraction -= (0.15f * ancMult)
                         }
                     }
                     "TRANSPARENCY" -> {
                         when {
-                            centerFreqHz in 900..3800 -> combinedGainFraction += 0.65f // Outside voice pass-through
-                            centerFreqHz < 300 -> combinedGainFraction -= 0.20f // De-occlusion
+                            centerFreqHz in 800..4200 -> combinedGainFraction += 0.70f // Outside voice pass-through
+                            centerFreqHz < 250 -> combinedGainFraction -= 0.25f // De-occlusion
                             else -> combinedGainFraction += 0.20f
                         }
                     }
@@ -187,7 +212,11 @@ object AudioEnhancer {
             // 3. Configure Hardware BassBoost
             bassBoost?.let { bb ->
                 val baseBoost = when (activeNoiseMode) {
-                    "ANC" -> 700
+                    "ANC" -> when (currentAncIntensity.value) {
+                        AncIntensity.ULTRA -> 850
+                        AncIntensity.BALANCED -> 650
+                        AncIntensity.COMFORT -> 380
+                    }
                     "TRANSPARENCY" -> 100
                     else -> 400
                 }
@@ -253,6 +282,20 @@ object AudioEnhancer {
     fun applyOffMode() {
         activeNoiseMode = "OFF"
         recomputeAndApplyCurves()
+    }
+
+    fun setAncIntensity(intensity: AncIntensity) {
+        currentAncIntensity.value = intensity
+        if (activeNoiseMode == "ANC") {
+            recomputeAndApplyCurves()
+        }
+    }
+
+    fun setAntiHissWindReduction(enabled: Boolean) {
+        antiHissWindReduction.value = enabled
+        if (activeNoiseMode == "ANC") {
+            recomputeAndApplyCurves()
+        }
     }
 
     fun setSpatialAudio(mode: SpatialAudioMode) {

@@ -240,6 +240,36 @@ object BluetoothTracker {
         }
     }
 
+    fun getConnectedDevice(): BluetoothDevice? {
+        val adapter = bluetoothAdapter ?: return null
+        return try {
+            adapter.bondedDevices?.firstOrNull { isDeviceConnected(it) }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun sendHardwareListeningMode(mode: me.anypods.app.anc.NoiseMode) {
+        try {
+            val dev = getConnectedDevice() ?: return
+            val method = dev.javaClass.getMethod(
+                "setMetadata",
+                Int::class.javaPrimitiveType ?: Int::class.java,
+                ByteArray::class.java
+            )
+            val modeVal = when (mode) {
+                me.anypods.app.anc.NoiseMode.NOISE_CANCELLATION -> byteArrayOf(0x02)
+                me.anypods.app.anc.NoiseMode.TRANSPARENCY -> byteArrayOf(0x03)
+                me.anypods.app.anc.NoiseMode.OFF -> byteArrayOf(0x01)
+                me.anypods.app.anc.NoiseMode.ADAPTIVE -> byteArrayOf(0x04)
+            }
+            method.invoke(dev, 17, modeVal)
+            Log.d(TAG, "Dispatched hardware listening mode $mode to ${dev.name}")
+        } catch (e: Exception) {
+            Log.d(TAG, "Hardware listening mode pass-through not applicable: ${e.message}")
+        }
+    }
+
     private fun readGattBattery(device: BluetoothDevice) {
         val ctx = appContext ?: return
         try {
