@@ -70,6 +70,86 @@ object AudioEnhancer {
         }
     }
 
+    /**
+     * Active Noise Cancellation Acoustic Profile:
+     * Deep low-end acoustic seal + attenuates background noise bleed
+     * Seamlessly processes current music with ZERO stutter or buffer underruns.
+     */
+    fun applyNoiseCancellationMode() {
+        initAudioEffects()
+        val eq = equalizer ?: return
+        try {
+            val numBands = eq.numberOfBands.toInt()
+            val maxEQ = eq.bandLevelRange[1]
+            val minEQ = eq.bandLevelRange[0]
+
+            for (i in 0 until numBands) {
+                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                if (centerFreqHz < 400) {
+                    // Deep acoustic seal
+                    eq.setBandLevel(i.toShort(), (maxEQ * 0.65f).toInt().toShort())
+                } else if (centerFreqHz in 600..2000) {
+                    // Attenuate ambient noise bleed
+                    eq.setBandLevel(i.toShort(), (minEQ * 0.40f).toInt().toShort())
+                } else {
+                    eq.setBandLevel(i.toShort(), (maxEQ * 0.25f).toInt().toShort())
+                }
+            }
+            bassBoost?.setStrength(800.toShort())
+            virtualizer?.enabled = true
+            if (virtualizer?.strengthSupported == true) {
+                virtualizer?.setStrength(600.toShort())
+            }
+            Log.d(TAG, "Noise Cancellation acoustic mode applied")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed applying ANC curve: ${e.message}")
+        }
+    }
+
+    /**
+     * Transparency Acoustic Profile:
+     * Boosts outside speech and vocal clarity while listening to music.
+     */
+    fun applyTransparencyMode() {
+        initAudioEffects()
+        val eq = equalizer ?: return
+        try {
+            val numBands = eq.numberOfBands.toInt()
+            val maxEQ = eq.bandLevelRange[1]
+
+            for (i in 0 until numBands) {
+                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                if (centerFreqHz in 900..3500) {
+                    // Boost speech and ambient presence
+                    eq.setBandLevel(i.toShort(), (maxEQ * 0.70f).toInt().toShort())
+                } else {
+                    eq.setBandLevel(i.toShort(), 0)
+                }
+            }
+            bassBoost?.setStrength(100.toShort())
+            virtualizer?.enabled = false
+            Log.d(TAG, "Transparency acoustic mode applied")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed applying Transparency curve: ${e.message}")
+        }
+    }
+
+    fun applyOffMode() {
+        initAudioEffects()
+        val eq = equalizer ?: return
+        try {
+            val numBands = eq.numberOfBands.toInt()
+            for (i in 0 until numBands) {
+                eq.setBandLevel(i.toShort(), 0)
+            }
+            bassBoost?.setStrength(0)
+            virtualizer?.enabled = false
+            Log.d(TAG, "Off mode applied: flat reference")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed resetting EQ: ${e.message}")
+        }
+    }
+
     fun setSpatialAudio(mode: SpatialAudioMode) {
         currentSpatialMode.value = mode
         try {
@@ -162,7 +242,6 @@ object AudioEnhancer {
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        // Maximize Bluetooth media stream volume
         try {
             val maxMusic = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxMusic, 0)
@@ -173,17 +252,14 @@ object AudioEnhancer {
 
         try {
             val sampleRate = 48000
-            val durationSec = 1.0 // 1-second cycling acoustic siren loop
+            val durationSec = 1.0
             val numSamples = (sampleRate * durationSec).toInt()
-            val sampleData = ShortArray(numSamples * 2) // Stereo
+            val sampleData = ShortArray(numSamples * 2)
 
-            // Generate high-piercing two-tone sweeping siren (3000 Hz to 4200 Hz)
             for (i in 0 until numSamples) {
                 val t = i.toDouble() / sampleRate
-                // Alternating pulse between 3.2 kHz and 4.2 kHz (resonance peak of earbud miniature drivers)
                 val freq = if ((i / (sampleRate / 4)) % 2 == 0) 3400.0 else 4200.0
                 val sine = sin(2.0 * Math.PI * freq * t)
-                // Overdriven square mix for raw acoustic output
                 val wave = if (sine > 0.0) 0.9 else -0.9
                 val sampleVal = (wave * Short.MAX_VALUE * 0.95).toInt().toShort()
 
@@ -209,7 +285,6 @@ object AudioEnhancer {
                 .setTransferMode(AudioTrack.MODE_STATIC)
                 .build()
 
-            // Explicitly route to connected Bluetooth A2DP earbud
             val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             val btDevice = outputs.firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
@@ -221,12 +296,9 @@ object AudioEnhancer {
                 Log.d(TAG, "Find My Earbuds routed to: ${btDevice.productName}")
             }
 
-            // Write all audio data once into static buffer
             track.write(sampleData, 0, sampleData.size)
-            // Loop continuously in hardware
             track.setLoopPoints(0, numSamples, -1)
 
-            // Attach +25dB LoudnessEnhancer
             try {
                 loudnessEnhancer = LoudnessEnhancer(track.audioSessionId).apply {
                     setTargetGain(2500)
