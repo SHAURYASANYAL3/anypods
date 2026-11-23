@@ -44,6 +44,9 @@ object AudioEnhancer {
 
     private var mediaPlayer: MediaPlayer? = null
 
+    // Track state internally for the unified DSP pipeline
+    private var activeNoiseMode: String = "OFF" // "ANC", "TRANSPARENCY", "OFF"
+
     // State flows for UI
     val currentSpatialMode = MutableStateFlow(SpatialAudioMode.OFF)
     val currentToneProfile = MutableStateFlow(ToneProfile.BALANCED_TONE)
@@ -69,177 +72,198 @@ object AudioEnhancer {
             }
             Log.d(TAG, "Audio effects initialized on session $audioSessionId")
         } catch (e: Exception) {
-            Log.w(TAG, "Audio effects not supported on this session: ${e.message}")
+            Log.w(TAG, "Audio effects initialization warning: ${e.message}")
         }
     }
 
     /**
-     * Active Noise Cancellation (Acoustic Isolation):
-     * - Auditory Masking: Boosts sub-bass & low frequencies (< 300Hz) by +7dB to mask external ambient drones (fans, AC, traffic, engine hum).
-     * - Notch Bleed Filter: Notches the 800Hz - 2200Hz band by -6dB where external speech & office noise leak past earbud tips.
-     * - Stage Isolation: Engages 3D virtualizer stage (750 strength) to separate music from ambient room acoustics.
+     * Unified Master DSP Pipeline:
+     * Combines Noise Cancellation / Transparency curves, Apple Headphone Accommodations,
+     * and 3D Spatial Audio Soundstage expansion into a single cohesive audio output.
      */
+    @Synchronized
+    private fun recomputeAndApplyCurves() {
+        initAudioEffects()
+        val eq = equalizer ?: return
+
+        try {
+            val numBands = eq.numberOfBands.toInt()
+            val minEQ = eq.bandLevelRange[0].toFloat() // typically -1500 mB (-15dB)
+            val maxEQ = eq.bandLevelRange[1].toFloat() // typically +1500 mB (+15dB)
+
+            // 1. Calculate Intensity Multiplier for Headphone Accommodations
+            val intensityFactor = when (currentToneIntensity.value) {
+                ToneIntensity.SLIGHT -> 0.40f
+                ToneIntensity.MODERATE -> 0.70f
+                ToneIntensity.STRONG -> 1.00f
+            }
+
+            // 2. Iterate each equalizer band and sum the acoustic gains
+            for (i in 0 until numBands) {
+                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000 // in Hz
+                var combinedGainFraction = 0.0f
+
+                // --- Noise Mode Component ---
+                when (activeNoiseMode) {
+                    "ANC" -> {
+                        when {
+                            centerFreqHz < 350 -> combinedGainFraction += 0.55f // Sub-bass seal mask
+                            centerFreqHz in 700..2200 -> combinedGainFraction -= 0.35f // Ambient speech notch
+                            else -> combinedGainFraction += 0.15f
+                        }
+                    }
+                    "TRANSPARENCY" -> {
+                        when {
+                            centerFreqHz in 900..3800 -> combinedGainFraction += 0.65f // Outside voice pass-through
+                            centerFreqHz < 300 -> combinedGainFraction -= 0.20f // De-occlusion
+                            else -> combinedGainFraction += 0.20f
+                        }
+                    }
+                }
+
+                // --- Apple Headphone Accommodations Component ---
+                when (currentToneProfile.value) {
+                    ToneProfile.BALANCED_TONE -> {
+                        // Apple Signature Harman Curve: rich punchy lows and sparkling airy highs
+                        when {
+                            centerFreqHz < 250 -> combinedGainFraction += (0.50f * intensityFactor) // Deep warm bass
+                            centerFreqHz in 250..1200 -> combinedGainFraction += (0.15f * intensityFactor) // Smooth body
+                            centerFreqHz in 1200..3500 -> combinedGainFraction += (0.30f * intensityFactor) // Vocal presence
+                            else -> combinedGainFraction += (0.60f * intensityFactor) // Silky crystal highs
+                        }
+                    }
+                    ToneProfile.VOCAL_RANGE -> {
+                        // Focus on speech clarity, podcast articulation, and vocal punch
+                        when {
+                            centerFreqHz < 250 -> combinedGainFraction += (0.20f * intensityFactor)
+                            centerFreqHz in 800..3800 -> combinedGainFraction += (0.80f * intensityFactor) // Vocal lift
+                            else -> combinedGainFraction += (0.25f * intensityFactor)
+                        }
+                    }
+                    ToneProfile.BRIGHTNESS -> {
+                        // Crisp cymbal definition, acoustic strings, and airy clarity
+                        when {
+                            centerFreqHz < 300 -> combinedGainFraction += (0.20f * intensityFactor)
+                            centerFreqHz in 300..2500 -> combinedGainFraction += (0.15f * intensityFactor)
+                            else -> combinedGainFraction += (0.85f * intensityFactor) // Sparkling brightness
+                        }
+                    }
+                }
+
+                // --- Spatial Audio Acoustic Stage Component ---
+                when (currentSpatialMode.value) {
+                    SpatialAudioMode.FIXED -> {
+                        // Cinema / Theatre acoustics: expands spatial depth
+                        if (centerFreqHz in 2800..8000) {
+                            combinedGainFraction += 0.25f
+                        }
+                        if (centerFreqHz < 180) {
+                            combinedGainFraction += 0.20f
+                        }
+                    }
+                    SpatialAudioMode.HEAD_TRACKED -> {
+                        // Wide Stage / Concert Hall: wide stereo stage separation
+                        if (centerFreqHz in 500..900) {
+                            combinedGainFraction -= 0.12f // Mild center scoop to widen stage
+                        }
+                        if (centerFreqHz > 3000) {
+                            combinedGainFraction += 0.35f // Air & spatial reverberance
+                        }
+                        if (centerFreqHz < 200) {
+                            combinedGainFraction += 0.30f // Deep cinematic sub-bass
+                        }
+                    }
+                    SpatialAudioMode.OFF -> {}
+                }
+
+                // Calculate final milliBel gain clamped strictly to hardware range
+                val targetGainMb = (maxEQ * combinedGainFraction).toInt()
+                    .coerceIn(minEQ.toInt(), maxEQ.toInt())
+                    .toShort()
+
+                eq.setBandLevel(i.toShort(), targetGainMb)
+            }
+
+            // 3. Configure Hardware BassBoost
+            bassBoost?.let { bb ->
+                val baseBoost = when (activeNoiseMode) {
+                    "ANC" -> 700
+                    "TRANSPARENCY" -> 100
+                    else -> 400
+                }
+                val accomBoost = when (currentToneProfile.value) {
+                    ToneProfile.BALANCED_TONE -> (300 * intensityFactor).toInt()
+                    else -> 100
+                }
+                bb.setStrength((baseBoost + accomBoost).coerceIn(0, 1000).toShort())
+            }
+
+            // 4. Configure Hardware Virtualizer for 3D Binaural Spatial Audio
+            virtualizer?.let { virt ->
+                try {
+                    // Try to force Binaural headphone mode if supported
+                    try {
+                        virt.forceVirtualizationMode(Virtualizer.VIRTUALIZATION_MODE_BINAURAL)
+                    } catch (_: Exception) {}
+
+                    when (currentSpatialMode.value) {
+                        SpatialAudioMode.OFF -> {
+                            // If ANC is on, use light stage virtualization (450)
+                            if (activeNoiseMode == "ANC") {
+                                virt.enabled = true
+                                if (virt.strengthSupported) virt.setStrength(450.toShort())
+                            } else {
+                                virt.enabled = false
+                            }
+                        }
+                        SpatialAudioMode.FIXED -> {
+                            virt.enabled = true
+                            if (virt.strengthSupported) {
+                                virt.setStrength(850.toShort())
+                            }
+                        }
+                        SpatialAudioMode.HEAD_TRACKED -> {
+                            virt.enabled = true
+                            if (virt.strengthSupported) {
+                                virt.setStrength(1000.toShort())
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Virtualizer configuration note: ${e.message}")
+                }
+            }
+
+            Log.d(TAG, "Applied composite DSP: Mode=$activeNoiseMode, Accom=${currentToneProfile.value}(${currentToneIntensity.value}), Spatial=${currentSpatialMode.value}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying composite curves: ${e.message}", e)
+        }
+    }
+
     fun applyNoiseCancellationMode() {
-        initAudioEffects()
-        val eq = equalizer ?: return
-        try {
-            val numBands = eq.numberOfBands.toInt()
-            val maxEQ = eq.bandLevelRange[1].toFloat()
-            val minEQ = eq.bandLevelRange[0].toFloat()
-
-            for (i in 0 until numBands) {
-                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
-                when {
-                    centerFreqHz < 350 -> {
-                        // Deep low-frequency acoustic seal mask (+70% of max boost)
-                        eq.setBandLevel(i.toShort(), (maxEQ * 0.75f).toInt().toShort())
-                    }
-                    centerFreqHz in 650..2200 -> {
-                        // Notch ambient bleed frequencies (-50% of min cut)
-                        eq.setBandLevel(i.toShort(), (minEQ * 0.50f).toInt().toShort())
-                    }
-                    else -> {
-                        // Clarity restoration
-                        eq.setBandLevel(i.toShort(), (maxEQ * 0.30f).toInt().toShort())
-                    }
-                }
-            }
-            bassBoost?.setStrength(850.toShort())
-            virtualizer?.enabled = true
-            if (virtualizer?.strengthSupported == true) {
-                virtualizer?.setStrength(750.toShort())
-            }
-            Log.d(TAG, "High-Isolation Noise Cancellation mode applied")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed applying ANC curve: ${e.message}")
-        }
+        activeNoiseMode = "ANC"
+        recomputeAndApplyCurves()
     }
 
-    /**
-     * Transparency Mode:
-     * - Speech Formant Amplification: Lifts 1000Hz - 3500Hz by +8dB so outside conversations and ambient sounds enter clearly.
-     * - Occlusion Cut: Lowers low-bass boost so ears don't feel plugged or stuffy.
-     */
     fun applyTransparencyMode() {
-        initAudioEffects()
-        val eq = equalizer ?: return
-        try {
-            val numBands = eq.numberOfBands.toInt()
-            val maxEQ = eq.bandLevelRange[1].toFloat()
-            val minEQ = eq.bandLevelRange[0].toFloat()
-
-            for (i in 0 until numBands) {
-                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
-                when {
-                    centerFreqHz in 900..3800 -> {
-                        // Boost vocal & ambient speech presence
-                        eq.setBandLevel(i.toShort(), (maxEQ * 0.85f).toInt().toShort())
-                    }
-                    centerFreqHz < 300 -> {
-                        // Reduce bass occlusion so ears feel open
-                        eq.setBandLevel(i.toShort(), (minEQ * 0.25f).toInt().toShort())
-                    }
-                    else -> {
-                        eq.setBandLevel(i.toShort(), (maxEQ * 0.35f).toInt().toShort())
-                    }
-                }
-            }
-            bassBoost?.setStrength(50.toShort())
-            virtualizer?.enabled = false
-            Log.d(TAG, "Transparency mode applied")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed applying Transparency curve: ${e.message}")
-        }
+        activeNoiseMode = "TRANSPARENCY"
+        recomputeAndApplyCurves()
     }
 
     fun applyOffMode() {
-        initAudioEffects()
-        val eq = equalizer ?: return
-        try {
-            val numBands = eq.numberOfBands.toInt()
-            for (i in 0 until numBands) {
-                eq.setBandLevel(i.toShort(), 0)
-            }
-            bassBoost?.setStrength(0)
-            virtualizer?.enabled = false
-            Log.d(TAG, "Off mode applied: flat reference")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed resetting EQ: ${e.message}")
-        }
+        activeNoiseMode = "OFF"
+        recomputeAndApplyCurves()
     }
 
     fun setSpatialAudio(mode: SpatialAudioMode) {
         currentSpatialMode.value = mode
-        try {
-            val virt = virtualizer ?: Virtualizer(0, 0).also { virtualizer = it }
-            when (mode) {
-                SpatialAudioMode.OFF -> {
-                    virt.enabled = false
-                }
-                SpatialAudioMode.FIXED -> {
-                    virt.enabled = true
-                    if (virt.strengthSupported) {
-                        virt.setStrength(750.toShort())
-                    }
-                }
-                SpatialAudioMode.HEAD_TRACKED -> {
-                    virt.enabled = true
-                    if (virt.strengthSupported) {
-                        virt.setStrength(1000.toShort())
-                    }
-                }
-            }
-            Log.d(TAG, "Spatial Audio set to $mode")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed setting spatial audio: ${e.message}")
-        }
+        recomputeAndApplyCurves()
     }
 
     fun setHeadphoneAccommodations(profile: ToneProfile, intensity: ToneIntensity) {
         currentToneProfile.value = profile
         currentToneIntensity.value = intensity
-        val eq = equalizer ?: return
-
-        try {
-            val numBands = eq.numberOfBands.toInt()
-            val minEQ = eq.bandLevelRange[0]
-            val maxEQ = eq.bandLevelRange[1]
-
-            val gainFactor = when (intensity) {
-                ToneIntensity.SLIGHT -> 0.35f
-                ToneIntensity.MODERATE -> 0.65f
-                ToneIntensity.STRONG -> 1.0f
-            }
-
-            val targetGain = (maxEQ * gainFactor).toInt().toShort()
-
-            for (i in 0 until numBands) {
-                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
-
-                when (profile) {
-                    ToneProfile.BALANCED_TONE -> {
-                        eq.setBandLevel(i.toShort(), 0)
-                    }
-                    ToneProfile.VOCAL_RANGE -> {
-                        if (centerFreqHz in 800..3500) {
-                            eq.setBandLevel(i.toShort(), targetGain)
-                        } else {
-                            eq.setBandLevel(i.toShort(), (minEQ * 0.15f).toInt().toShort())
-                        }
-                    }
-                    ToneProfile.BRIGHTNESS -> {
-                        if (centerFreqHz >= 3500) {
-                            eq.setBandLevel(i.toShort(), targetGain)
-                        } else {
-                            eq.setBandLevel(i.toShort(), 0)
-                        }
-                    }
-                }
-            }
-            Log.d(TAG, "Applied Headphone Accommodation: $profile ($intensity)")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed applying Headphone Accommodations: ${e.message}")
-        }
+        recomputeAndApplyCurves()
     }
 
     fun setAudioBalance(balance: Float) {
@@ -306,13 +330,13 @@ object AudioEnhancer {
         try {
             loudnessEnhancer?.enabled = false
             loudnessEnhancer?.release()
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         loudnessEnhancer = null
 
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         mediaPlayer = null
         Log.d(TAG, "Find My Earbuds tone stopped")
     }
@@ -337,7 +361,6 @@ object AudioEnhancer {
         val sampleData = ShortArray(numSamples * 2)
         for (i in 0 until numSamples) {
             val t = i.toDouble() / sampleRate
-            // Alternating fast siren beep (3.4 kHz and 4.2 kHz)
             val freq = if ((i / (sampleRate / 4)) % 2 == 0) 3400.0 else 4200.0
             val sine = sin(2.0 * Math.PI * freq * t)
             val wave = if (sine > 0.0) 0.95 else -0.95
@@ -356,12 +379,12 @@ object AudioEnhancer {
 
         // fmt chunk
         byteBuffer.put("fmt ".toByteArray())
-        byteBuffer.putInt(16) // Subchunk1Size (16 for PCM)
-        byteBuffer.putShort(1.toShort()) // AudioFormat (1 = PCM)
+        byteBuffer.putInt(16)
+        byteBuffer.putShort(1.toShort())
         byteBuffer.putShort(numChannels.toShort())
         byteBuffer.putInt(sampleRate)
-        byteBuffer.putInt(sampleRate * numChannels * (bitsPerSample / 8)) // ByteRate
-        byteBuffer.putShort((numChannels * (bitsPerSample / 8)).toShort()) // BlockAlign
+        byteBuffer.putInt(sampleRate * numChannels * (bitsPerSample / 8))
+        byteBuffer.putShort((numChannels * (bitsPerSample / 8)).toShort())
         byteBuffer.putShort(bitsPerSample.toShort())
 
         // data chunk

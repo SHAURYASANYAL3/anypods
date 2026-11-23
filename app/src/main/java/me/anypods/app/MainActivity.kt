@@ -694,20 +694,35 @@ fun AnyPodsScreen(
                 }
             }
 
-            // 4. Spatial Audio
+            // 4. Spatial Audio (Apple 3D Binaural Soundstage)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Spatial Audio (3D Surround)",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Spatial Audio (3D Surround)",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Binaural 3D",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Immersive theatre-style sound stage with audio virtualization.",
+                        text = "Immersive theatre-style sound stage with binaural virtualizer and acoustic stage widening.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -718,9 +733,9 @@ fun AnyPodsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val modes = listOf(
-                            SpatialAudioMode.OFF to "Off",
-                            SpatialAudioMode.FIXED to "Fixed",
-                            SpatialAudioMode.HEAD_TRACKED to "Wide Stage"
+                            SpatialAudioMode.OFF to "Off (Stereo)",
+                            SpatialAudioMode.FIXED to "Fixed (Cinema)",
+                            SpatialAudioMode.HEAD_TRACKED to "Wide Stage (3D)"
                         )
                         modes.forEach { (mode, name) ->
                             OutlinedButton(
@@ -731,29 +746,54 @@ fun AnyPodsScreen(
                                     containerColor = if (spatialAudioMode == mode) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                                 )
                             ) {
-                                Text(name, fontSize = 13.sp, fontWeight = if (spatialAudioMode == mode) FontWeight.Bold else FontWeight.Normal)
+                                Text(
+                                    text = name,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = if (spatialAudioMode == mode) FontWeight.Bold else FontWeight.Normal
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // 5. Headphone Accommodations (AirPods Pro EQ Tuning)
+            // 5. Headphone Accommodations (Apple Audiophile Tuning)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Headphone Accommodations (EQ)",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Headphone Accommodations (EQ)",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = Color(0xFFE3F2FD),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Apple iOS Profile",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1976D2),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Custom audio tuning profile directly from iOS accessibility settings.",
+                        text = when (toneProfile) {
+                            ToneProfile.BALANCED_TONE -> "Balanced: Rich warm punchy bass + silky crystal highs (Apple Harman curve)."
+                            ToneProfile.VOCAL_RANGE -> "Vocal Range: Pushes dialogue and voices forward with clear articulation."
+                            ToneProfile.BRIGHTNESS -> "Brightness: Crisp cymbal sparkle, airy strings, and high-frequency definition."
+                        },
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -764,7 +804,7 @@ fun AnyPodsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val profiles = listOf(
-                            ToneProfile.BALANCED_TONE to "Balanced",
+                            ToneProfile.BALANCED_TONE to "Balanced Tone",
                             ToneProfile.VOCAL_RANGE to "Vocal Range",
                             ToneProfile.BRIGHTNESS to "Brightness"
                         )
@@ -777,7 +817,12 @@ fun AnyPodsScreen(
                                     containerColor = if (toneProfile == prof) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                                 )
                             ) {
-                                Text(label, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = if (toneProfile == prof) FontWeight.Bold else FontWeight.Normal
+                                )
                             }
                         }
                     }
@@ -791,9 +836,9 @@ fun AnyPodsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val intensities = listOf(
-                            ToneIntensity.SLIGHT to "Slight",
-                            ToneIntensity.MODERATE to "Moderate",
-                            ToneIntensity.STRONG to "Strong"
+                            ToneIntensity.SLIGHT to "Slight (+4dB)",
+                            ToneIntensity.MODERATE to "Moderate (+7dB)",
+                            ToneIntensity.STRONG to "Strong (+10dB)"
                         )
                         intensities.forEach { (intensity, label) ->
                             OutlinedButton(
@@ -801,10 +846,15 @@ fun AnyPodsScreen(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (toneIntensity == intensity) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                                    containerColor = if (toneIntensity == intensity) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                                 )
                             ) {
-                                Text(label, fontSize = 12.sp)
+                                Text(
+                                    text = label,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = if (toneIntensity == intensity) FontWeight.Bold else FontWeight.Normal
+                                )
                             }
                         }
                     }
