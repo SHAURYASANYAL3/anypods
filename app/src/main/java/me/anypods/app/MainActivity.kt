@@ -45,6 +45,11 @@ import me.anypods.app.model.EarbudState
 import me.anypods.app.ui.OverlayPopup
 import me.anypods.app.updater.UpdateInfo
 import me.anypods.app.updater.UpdateManager
+import me.anypods.app.audio.EarTipFitTester
+import me.anypods.app.audio.HearingHealthManager
+import me.anypods.app.audio.FitTestResult
+import me.anypods.app.ui.DynamicIslandOverlay
+import me.anypods.app.widget.AnyPodsWidgetProvider
 
 class MainActivity : ComponentActivity() {
 
@@ -78,6 +83,14 @@ class MainActivity : ComponentActivity() {
             val isCheckingUpdate by UpdateManager.isChecking.collectAsState()
             val downloadProgress by UpdateManager.downloadProgress.collectAsState()
 
+            val fitTesting by EarTipFitTester.isTesting.collectAsState()
+            val fitProgress by EarTipFitTester.testProgress.collectAsState()
+            val fitResult by EarTipFitTester.lastResult.collectAsState()
+
+            val volumeLimiter by HearingHealthManager.isLimiterEnabled.collectAsState()
+            val estimatedDb by HearingHealthManager.estimatedDecibels.collectAsState()
+            var isDynamicIslandActive by remember { mutableStateOf(DynamicIslandOverlay.isEnabled()) }
+
             AnyPodsScreen(
                 state = earbudState,
                 currentNoiseMode = noiseMode,
@@ -92,6 +105,39 @@ class MainActivity : ComponentActivity() {
                 updateInfo = updateInfo,
                 isCheckingUpdate = isCheckingUpdate,
                 downloadProgress = downloadProgress,
+                fitTesting = fitTesting,
+                fitProgress = fitProgress,
+                fitResult = fitResult,
+                onStartFitTest = {
+                    EarTipFitTester.startFitTest(this) {}
+                },
+                onStopFitTest = {
+                    EarTipFitTester.stopTest()
+                },
+                volumeLimiterEnabled = volumeLimiter,
+                estimatedDb = estimatedDb,
+                onToggleVolumeLimiter = {
+                    HearingHealthManager.toggleLimiter(this, it)
+                },
+                dynamicIslandEnabled = isDynamicIslandActive,
+                onToggleDynamicIsland = { enabled ->
+                    if (enabled) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                            startActivity(intent)
+                            Toast.makeText(this, "Please allow 'Display over other apps'", Toast.LENGTH_SHORT).show()
+                        } else {
+                            DynamicIslandOverlay.show(this)
+                            isDynamicIslandActive = true
+                        }
+                    } else {
+                        DynamicIslandOverlay.hide()
+                        isDynamicIslandActive = false
+                    }
+                },
                 onCheckForUpdates = { UpdateManager.checkForUpdates(this, isManual = true) },
                 onConfirmUpdate = { info -> UpdateManager.downloadAndInstall(this, info) },
                 onDismissUpdate = { UpdateManager.dismissUpdate() },
@@ -151,6 +197,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         BluetoothTracker.refreshConnectedDevice()
+        HearingHealthManager.updateEstimatedDb(this)
+        AnyPodsWidgetProvider.updateAllWidgets(this)
     }
 
     override fun onDestroy() {
@@ -195,6 +243,16 @@ fun AnyPodsScreen(
     updateInfo: UpdateInfo?,
     isCheckingUpdate: Boolean,
     downloadProgress: Int,
+    fitTesting: Boolean,
+    fitProgress: Float,
+    fitResult: FitTestResult?,
+    onStartFitTest: () -> Unit,
+    onStopFitTest: () -> Unit,
+    volumeLimiterEnabled: Boolean,
+    estimatedDb: Int,
+    onToggleVolumeLimiter: (Boolean) -> Unit,
+    dynamicIslandEnabled: Boolean,
+    onToggleDynamicIsland: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
     onConfirmUpdate: (UpdateInfo) -> Unit,
     onDismissUpdate: () -> Unit,
@@ -214,6 +272,15 @@ fun AnyPodsScreen(
     onSetCase: (Int, Boolean) -> Unit
 ) {
     var isBeeping by remember { mutableStateOf(false) }
+    var selectedDeviceModel by remember { mutableStateOf("AirPods Pro 2") }
+
+    val modelImageRes = when (selectedDeviceModel) {
+        "AirPods Pro 1" -> R.drawable.airpods_pro_1_buds
+        "AirPods 4 ANC" -> R.drawable.airpods_4_anc_buds
+        "AirPods 3" -> R.drawable.airpods_3_buds
+        "AirPods 2" -> R.drawable.airpods_2_buds
+        else -> R.drawable.airpods_pro_2_buds
+    }
 
     Scaffold(
         topBar = {
@@ -221,9 +288,8 @@ fun AnyPodsScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
-                            painter = painterResource(id = R.drawable.airpods),
+                            painter = painterResource(id = R.drawable.airpods_pro_2_buds),
                             contentDescription = "Pods",
-                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
                             modifier = Modifier.size(36.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
@@ -310,11 +376,39 @@ fun AnyPodsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Image(
-                        painter = painterResource(id = R.drawable.airpods),
-                        contentDescription = "AirPods Visual",
-                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.size(150.dp)
+                        painter = painterResource(id = modelImageRes),
+                        contentDescription = selectedDeviceModel,
+                        modifier = Modifier
+                            .size(175.dp)
+                            .padding(vertical = 4.dp)
                     )
+
+                    // Model Selection Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        listOf("AirPods Pro 2", "AirPods Pro 1", "AirPods 4", "AirPods 3").forEach { model ->
+                            val isSel = selectedDeviceModel.startsWith(model)
+                            Surface(
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .padding(horizontal = 3.dp)
+                                    .clickable { selectedDeviceModel = model }
+                            ) {
+                                Text(
+                                    text = model,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -842,6 +936,235 @@ fun AnyPodsScreen(
                             Text("Stop Beeping", color = Color(0xFFFF5252))
                         }
                     }
+                }
+            }
+
+            // 8. Apple Ear Tip Fit Test (Acoustic Reflection)
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Ear Tip Fit Test",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = Color(0xFFE8F5E9),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Acoustic Sweep",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF2E7D32),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Tests if your ear tips seal the ear canal properly for deep bass and optimal noise cancellation.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (fitTesting) {
+                        Text(
+                            text = "Playing Apple acoustic test chime... ${(fitProgress * 100).toInt()}%",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = { fitProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                            strokeCap = StrokeCap.Round
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onStopFitTest,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cancel Test")
+                        }
+                    } else if (fitResult != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Left: ",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = if (fitResult.isLeftGood) "Good Seal ✓" else "Adjust Tip",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (fitResult.isLeftGood) Color(0xFF34C759) else Color(0xFFFF9500)
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Text(
+                                        text = "Right: ",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = if (fitResult.isRightGood) "Good Seal ✓" else "Adjust Tip",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (fitResult.isRightGood) Color(0xFF34C759) else Color(0xFFFF9500)
+                                    )
+                                }
+                                Text(
+                                    text = "Acoustic Seal Quality: ${fitResult.sealScorePercent}%",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(
+                                onClick = onStartFitTest,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Test Again")
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = onStartFitTest,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Run Ear Tip Fit Test")
+                        }
+                    }
+                }
+            }
+
+            // 9. Hearing Health & Volume Limiter
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Hearing Health & Safe Volume",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp
+                            )
+                            Text(
+                                text = "Est. Level: $estimatedDb dB SPL (WHO Safe <85dB)",
+                                fontSize = 13.sp,
+                                color = if (estimatedDb <= 80) Color(0xFF34C759) else if (estimatedDb <= 85) Color(0xFFFF9500) else Color(0xFFFF3B30)
+                            )
+                        }
+                        Switch(
+                            checked = volumeLimiterEnabled,
+                            onCheckedChange = onToggleVolumeLimiter
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "85 dB volume limiter prevents sudden hearing damage and long-term ear fatigue during music playback.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 10. iOS 18 Dynamic Island Pill
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Dynamic Island Camera Pill",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp
+                            )
+                            Text(
+                                text = "Interactive punch-hole pill with battery & noise modes",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = dynamicIslandEnabled,
+                            onCheckedChange = onToggleDynamicIsland
+                        )
+                    }
+                }
+            }
+
+            // 11. Quick Settings Tile & Home Widget Status
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Quick Controls Active",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "• Quick Settings Tile: Pull down your notification bar and add 'Noise Control' for 1-tap ANC switching.\n• Home Screen Widget: Long press home screen to add AnyPods Pro battery dials & ANC controls.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

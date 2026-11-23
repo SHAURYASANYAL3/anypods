@@ -40,6 +40,34 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- Quick Settings Tile for Noise Control -->
+        <service
+            android:name=".service.NoiseTileService"
+            android:label="Noise Control"
+            android:icon="@drawable/airpods"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Home Screen Battery & ANC Widget -->
+        <receiver
+            android:name=".widget.AnyPodsWidgetProvider"
+            android:label="AnyPods Pro"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="me.anypods.app.widget.ACTION_SET_ANC" />
+                <action android:name="me.anypods.app.widget.ACTION_SET_TRANSPARENCY" />
+                <action android:name="me.anypods.app.widget.ACTION_SET_OFF" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_anypods_info" />
+        </receiver>
+
         <receiver
             android:name=".receiver.BluetoothStateReceiver"
             android:exported="true">

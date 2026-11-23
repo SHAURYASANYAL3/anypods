@@ -90,11 +90,10 @@ object OverlayPopup {
         }
         container.addView(statusText)
 
-        // Center Earbuds Graphic
+        // Center Earbuds Graphic (Real Apple AirPods Pro 2)
         val earbudIcon = ImageView(context).apply {
-            setImageResource(R.drawable.airpods)
-            setColorFilter(0xFF1C1C1E.toInt())
-            layoutParams = LinearLayout.LayoutParams(260, 260).apply {
+            setImageResource(R.drawable.airpods_pro_2_buds)
+            layoutParams = LinearLayout.LayoutParams(400, 300).apply {
                 gravity = Gravity.CENTER
             }
         }
