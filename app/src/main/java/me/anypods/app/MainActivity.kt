@@ -43,6 +43,8 @@ import me.anypods.app.audio.ToneProfile
 import me.anypods.app.bluetooth.BluetoothTracker
 import me.anypods.app.model.EarbudState
 import me.anypods.app.ui.OverlayPopup
+import me.anypods.app.updater.UpdateInfo
+import me.anypods.app.updater.UpdateManager
 
 class MainActivity : ComponentActivity() {
 
@@ -56,6 +58,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AudioEnhancer.initAudioEffects()
         checkAndRequestPermissions()
+        // Auto-check for updates from GitHub in the background
+        UpdateManager.checkForUpdates(this, isManual = false)
 
         setContent {
             val earbudState by BluetoothTracker.earbudState.collectAsState()
@@ -70,6 +74,10 @@ class MainActivity : ComponentActivity() {
             val toneIntensity by AudioEnhancer.currentToneIntensity.collectAsState()
             val lrBalance by AudioEnhancer.currentBalance.collectAsState()
 
+            val updateInfo by UpdateManager.updateAvailable.collectAsState()
+            val isCheckingUpdate by UpdateManager.isChecking.collectAsState()
+            val downloadProgress by UpdateManager.downloadProgress.collectAsState()
+
             AnyPodsScreen(
                 state = earbudState,
                 currentNoiseMode = noiseMode,
@@ -81,6 +89,12 @@ class MainActivity : ComponentActivity() {
                 toneProfile = toneProfile,
                 toneIntensity = toneIntensity,
                 lrBalance = lrBalance,
+                updateInfo = updateInfo,
+                isCheckingUpdate = isCheckingUpdate,
+                downloadProgress = downloadProgress,
+                onCheckForUpdates = { UpdateManager.checkForUpdates(this, isManual = true) },
+                onConfirmUpdate = { info -> UpdateManager.downloadAndInstall(this, info) },
+                onDismissUpdate = { UpdateManager.dismissUpdate() },
                 onRefresh = { BluetoothTracker.refreshConnectedDevice() },
                 onShowPopup = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
@@ -178,6 +192,12 @@ fun AnyPodsScreen(
     toneProfile: ToneProfile,
     toneIntensity: ToneIntensity,
     lrBalance: Float,
+    updateInfo: UpdateInfo?,
+    isCheckingUpdate: Boolean,
+    downloadProgress: Int,
+    onCheckForUpdates: () -> Unit,
+    onConfirmUpdate: (UpdateInfo) -> Unit,
+    onDismissUpdate: () -> Unit,
     onRefresh: () -> Unit,
     onShowPopup: () -> Unit,
     onSelectNoiseMode: (NoiseMode) -> Unit,
@@ -215,6 +235,18 @@ fun AnyPodsScreen(
                     }
                 },
                 actions = {
+                    if (isCheckingUpdate) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        IconButton(onClick = onCheckForUpdates) {
+                            Text("⬆", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     Button(
                         onClick = onRefresh,
                         colors = ButtonDefaults.buttonColors(
@@ -813,7 +845,175 @@ fun AnyPodsScreen(
                 }
             }
 
+            // Software Update Card
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Software Update",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = "GitHub: SHAURYASANYAL3/anypods",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(
+                            onClick = onCheckForUpdates,
+                            enabled = !isCheckingUpdate && (downloadProgress < 0 || downloadProgress == 100),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Checking...")
+                            } else {
+                                Text("Check Update")
+                            }
+                        }
+                    }
+
+                    if (updateInfo != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Update Available: ${updateInfo.tagName}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = updateInfo.releaseNotes.take(60) + if (updateInfo.releaseNotes.length > 60) "..." else "",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Button(
+                                    onClick = { onConfirmUpdate(updateInfo) },
+                                    enabled = downloadProgress < 0 || downloadProgress == 100
+                                ) {
+                                    Text(if (downloadProgress in 0..99) "$downloadProgress%" else "Install")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        // Auto-update prompt modal dialog
+        if (updateInfo != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (downloadProgress < 0) onDismissUpdate()
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Update Available", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = updateInfo.tagName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "A new version of AnyPods Pro is available. Would you like to update now or stay on the current version?",
+                            fontSize = 14.sp
+                        )
+                        if (updateInfo.releaseNotes.isNotBlank()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = updateInfo.releaseNotes,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(8.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (downloadProgress in 0..100) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (downloadProgress == 100) "Download complete! Opening installer..." else "Downloading update: $downloadProgress%",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            LinearProgressIndicator(
+                                progress = { downloadProgress / 100f },
+                                modifier = Modifier.fillMaxWidth(),
+                                strokeCap = StrokeCap.Round
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { onConfirmUpdate(updateInfo) },
+                        enabled = downloadProgress < 0 || downloadProgress == 100,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(if (downloadProgress in 0..99) "Downloading..." else "Update Now")
+                    }
+                },
+                dismissButton = {
+                    if (downloadProgress < 0) {
+                        OutlinedButton(onClick = onDismissUpdate) {
+                            Text("Stay on Current Version")
+                        }
+                    }
+                }
+            )
         }
     }
 }
