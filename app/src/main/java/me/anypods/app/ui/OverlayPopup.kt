@@ -90,9 +90,10 @@ object OverlayPopup {
         }
         container.addView(statusText)
 
-        // Center Earbuds Graphic (Real Apple AirPods Pro 2)
+        // Center Earbuds Graphic (Dynamic for all models: AirPods, Galaxy Buds, Pixel Buds, Sony, etc.)
+        val modelInfo = me.anypods.app.model.PodModelManager.getSelectedModel(context, state.name)
         val earbudIcon = ImageView(context).apply {
-            setImageResource(R.drawable.airpods_pro_2_buds)
+            setImageResource(modelInfo.imageRes)
             layoutParams = LinearLayout.LayoutParams(400, 300).apply {
                 gravity = Gravity.CENTER
             }

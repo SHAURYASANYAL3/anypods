@@ -12,9 +12,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -28,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +45,8 @@ import me.anypods.app.audio.ToneIntensity
 import me.anypods.app.audio.ToneProfile
 import me.anypods.app.bluetooth.BluetoothTracker
 import me.anypods.app.model.EarbudState
+import me.anypods.app.model.PodModelManager
+import me.anypods.app.model.PodModelInfo
 import me.anypods.app.ui.OverlayPopup
 import me.anypods.app.updater.UpdateInfo
 import me.anypods.app.updater.UpdateManager
@@ -272,15 +277,23 @@ fun AnyPodsScreen(
     onSetCase: (Int, Boolean) -> Unit
 ) {
     var isBeeping by remember { mutableStateOf(false) }
-    var selectedDeviceModel by remember { mutableStateOf("AirPods Pro 2") }
-
-    val modelImageRes = when (selectedDeviceModel) {
-        "AirPods Pro 1" -> R.drawable.airpods_pro_1_buds
-        "AirPods 4 ANC" -> R.drawable.airpods_4_anc_buds
-        "AirPods 3" -> R.drawable.airpods_3_buds
-        "AirPods 2" -> R.drawable.airpods_2_buds
-        else -> R.drawable.airpods_pro_2_buds
+    val context = LocalContext.current
+    var selectedBrand by remember { mutableStateOf("All") }
+    var selectedDeviceModel by remember {
+        mutableStateOf(PodModelManager.getSelectedModel(context, state.name).name)
     }
+
+    // Auto-detect matching pod model when Bluetooth connects
+    LaunchedEffect(state.name, state.isConnected) {
+        if (state.isConnected && state.name.isNotEmpty() && state.name != "Wireless Earbuds") {
+            val detected = PodModelManager.detectModel(state.name)
+            selectedDeviceModel = detected.name
+            PodModelManager.saveSelectedModel(context, detected.id)
+        }
+    }
+
+    val currentModelInfo = PodModelManager.getModelByName(selectedDeviceModel)
+    val modelImageRes = currentModelInfo.imageRes
 
     Scaffold(
         topBar = {
@@ -288,7 +301,7 @@ fun AnyPodsScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
-                            painter = painterResource(id = R.drawable.airpods_pro_2_buds),
+                            painter = painterResource(id = modelImageRes),
                             contentDescription = "Pods",
                             modifier = Modifier.size(36.dp)
                         )
@@ -373,39 +386,98 @@ fun AnyPodsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Image(
                         painter = painterResource(id = modelImageRes),
                         contentDescription = selectedDeviceModel,
                         modifier = Modifier
-                            .size(175.dp)
+                            .size(185.dp)
                             .padding(vertical = 4.dp)
                     )
 
-                    // Model Selection Chips
+                    Text(
+                        text = "${currentModelInfo.brand} • ${currentModelInfo.name}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Brand Category Selector Filter Chips
+                    val brands = listOf("All", "Apple", "Samsung", "Google", "Sony", "Nothing", "Beats", "OnePlus", "Universal")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.Center
+                            .horizontalScroll(rememberScrollState())
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("AirPods Pro 2", "AirPods Pro 1", "AirPods 4", "AirPods 3").forEach { model ->
-                            val isSel = selectedDeviceModel.startsWith(model)
+                        brands.forEach { brand ->
+                            val isBrandSel = selectedBrand == brand
                             Surface(
-                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(8.dp),
+                                color = if (isBrandSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
-                                    .padding(horizontal = 3.dp)
-                                    .clickable { selectedDeviceModel = model }
+                                    .clickable { selectedBrand = brand }
                             ) {
                                 Text(
-                                    text = model,
+                                    text = brand,
                                     fontSize = 11.sp,
-                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    fontWeight = if (isBrandSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isBrandSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // All Earbud Models Horizontal Picker
+                    val filteredModels = if (selectedBrand == "All") {
+                        PodModelManager.ALL_MODELS
+                    } else {
+                        PodModelManager.ALL_MODELS.filter { it.brand.equals(selectedBrand, ignoreCase = true) }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        filteredModels.forEach { model ->
+                            val isSel = selectedDeviceModel == model.name
+                            Surface(
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .clickable {
+                                        selectedDeviceModel = model.name
+                                        PodModelManager.saveSelectedModel(context, model.id)
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = model.imageRes),
+                                        contentDescription = model.name,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = model.name,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
