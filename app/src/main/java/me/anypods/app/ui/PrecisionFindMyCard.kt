@@ -37,12 +37,12 @@ fun PrecisionFindMyCard(
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(22.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -63,26 +63,26 @@ fun PrecisionFindMyCard(
                 }
 
                 Surface(
-                    color = if (isTracking) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp)
+                    color = if (isTracking) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(50)
                 ) {
                     Text(
                         text = if (isTracking) "RADAR LIVE" else "READY",
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isTracking) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // M3 Secondary Tab Row / Pills
+            // M3 Expressive Pill Segmented Tab Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(50))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -90,16 +90,16 @@ fun PrecisionFindMyCard(
                     modifier = Modifier
                         .weight(1f)
                         .clickable { activeTab = 0 },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (activeTab == 0) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent
+                    shape = RoundedCornerShape(50),
+                    color = if (activeTab == 0) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                 ) {
                     Text(
                         text = "📡 Precision Radar",
                         fontSize = 13.sp,
                         fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Medium,
-                        color = if (activeTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (activeTab == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        modifier = Modifier.padding(vertical = 10.dp)
                     )
                 }
 
@@ -107,21 +107,21 @@ fun PrecisionFindMyCard(
                     modifier = Modifier
                         .weight(1f)
                         .clickable { activeTab = 1 },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (activeTab == 1) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent
+                    shape = RoundedCornerShape(50),
+                    color = if (activeTab == 1) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                 ) {
                     Text(
                         text = "🔊 Sound Siren",
                         fontSize = 13.sp,
                         fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Medium,
-                        color = if (activeTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (activeTab == 1) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        modifier = Modifier.padding(vertical = 10.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             if (activeTab == 0) {
                 // Precision Distance Radar UI
@@ -129,15 +129,15 @@ fun PrecisionFindMyCard(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Pulsing Radar Circle & Distance Counter
+                    // Pulsing Radar Concentric Circles & Distance Counter
                     Box(
                         modifier = Modifier
                             .size(190.dp)
                             .background(
                                 color = if (isTracking) {
-                                    if (distance <= 1.0f) Color(0x334CAF50)
-                                    else if (distance <= 3.0f) Color(0x33FFB300)
-                                    else Color(0x33006495)
+                                    if (distance <= 1.0f) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                                    else if (distance <= 3.0f) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.20f)
+                                    else MaterialTheme.colorScheme.secondary.copy(alpha = 0.20f)
                                 } else MaterialTheme.colorScheme.surfaceContainer,
                                 shape = CircleShape
                             ),
@@ -149,9 +149,9 @@ fun PrecisionFindMyCard(
                                 .size(130.dp)
                                 .background(
                                     color = if (isTracking) {
-                                        if (distance <= 1.0f) Color(0x444CAF50)
-                                        else if (distance <= 3.0f) Color(0x44FFB300)
-                                        else Color(0x44006495)
+                                        if (distance <= 1.0f) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                        else if (distance <= 3.0f) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)
+                                        else MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)
                                     } else MaterialTheme.colorScheme.surfaceContainerHigh,
                                     shape = CircleShape
                                 ),
@@ -163,7 +163,7 @@ fun PrecisionFindMyCard(
                                         text = "$distance",
                                         fontSize = 38.sp,
                                         fontWeight = FontWeight.Black,
-                                        color = if (distance <= 1.0f) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                                        color = if (distance <= 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         text = "METERS",
@@ -191,29 +191,29 @@ fun PrecisionFindMyCard(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Proximity Status Chip
+                    // Proximity Status Pill Chip
                     Surface(
                         color = if (isTracking) {
-                            if (distance <= 1.0f) Color(0xFFE8F5E9)
-                            else if (distance <= 3.0f) Color(0xFFFFF8E1)
+                            if (distance <= 1.0f) MaterialTheme.colorScheme.primaryContainer
+                            else if (distance <= 3.0f) MaterialTheme.colorScheme.tertiaryContainer
                             else MaterialTheme.colorScheme.secondaryContainer
-                        } else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(14.dp)
+                        } else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        shape = RoundedCornerShape(50)
                     ) {
                         Text(
                             text = if (isTracking) proximityStatus else "Ready to track ${state.name}",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (isTracking) {
-                                if (distance <= 1.0f) Color(0xFF2E7D32)
-                                else if (distance <= 3.0f) Color(0xFFE65100)
+                                if (distance <= 1.0f) MaterialTheme.colorScheme.onPrimaryContainer
+                                else if (distance <= 3.0f) MaterialTheme.colorScheme.onTertiaryContainer
                                 else MaterialTheme.colorScheme.onSecondaryContainer
                             } else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     if (isTracking) {
                         // Signal Strength Progress Bar & Stats
@@ -225,16 +225,16 @@ fun PrecisionFindMyCard(
                             Text("Signal Strength: $signalPct%", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             Text("$rssi dBm • Haptic Feedback", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
+                        Spacer(modifier = Modifier.height(6.dp))
+                        M3LinearProgressIndicator(
                             progress = { signalPct / 100f },
                             modifier = Modifier.fillMaxWidth(),
-                            strokeCap = StrokeCap.Round,
-                            color = if (distance <= 1.0f) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                            strokeHeight = 8.dp,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Action Button: Start / Stop Tracking
                     FilledTonalButton(
@@ -249,7 +249,7 @@ fun PrecisionFindMyCard(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(50),
                         enabled = state.address.isNotBlank()
                     ) {
                         Text(
@@ -276,7 +276,7 @@ fun PrecisionFindMyCard(
                         OutlinedButton(
                             onClick = { onFindMy(true, false) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text("Left Pod", fontSize = 12.sp)
                         }
@@ -284,7 +284,7 @@ fun PrecisionFindMyCard(
                         Button(
                             onClick = { onFindMy(true, true) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(50),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
                             Text("Both Pods", fontSize = 12.sp)
@@ -293,18 +293,18 @@ fun PrecisionFindMyCard(
                         OutlinedButton(
                             onClick = { onFindMy(false, true) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text("Right Pod", fontSize = 12.sp)
                         }
                     }
 
                     if (isBeeping) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = onStopFindMy,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(50),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                         ) {
                             Text("Stop Audio Siren", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)

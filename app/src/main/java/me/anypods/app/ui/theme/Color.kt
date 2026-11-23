@@ -2,7 +2,7 @@ package me.anypods.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Material Design 3 Color Tokens (M3 Standard)
+// Material Design 3 Expressive Color Tokens
 // https://m3.material.io/styles/color/the-color-system/tokens
 
 // Primary: High-tech deep cyan/blue
@@ -81,3 +81,20 @@ val OutlineLight = Color(0xFF71787E)
 val OutlineVariantLight = Color(0xFFC1C7CE)
 val OutlineDark = Color(0xFF8B9198)
 val OutlineVariantDark = Color(0xFF41474D)
+
+// M3 Expressive Status Accents
+val SuccessLight = Color(0xFF1B6D2F)
+val SuccessContainerLight = Color(0xFFC8F8CA)
+val OnSuccessContainerLight = Color(0xFF002107)
+
+val SuccessDark = Color(0xFF80DB8C)
+val SuccessContainerDark = Color(0xFF00531E)
+val OnSuccessContainerDark = Color(0xFFC8F8CA)
+
+val WarningLight = Color(0xFF8C5000)
+val WarningContainerLight = Color(0xFFFFDCBE)
+val OnWarningContainerLight = Color(0xFF2C1600)
+
+val WarningDark = Color(0xFFFFB77C)
+val WarningContainerDark = Color(0xFF6B3B00)
+val OnWarningContainerDark = Color(0xFFFFDCBE)

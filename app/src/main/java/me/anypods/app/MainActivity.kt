@@ -56,6 +56,9 @@ import me.anypods.app.model.PodModelInfo
 import me.anypods.app.ui.DynamicIslandOverlay
 import me.anypods.app.ui.OverlayPopup
 import me.anypods.app.ui.PrecisionFindMyCard
+import me.anypods.app.ui.M3LoadingIndicator
+import me.anypods.app.ui.M3LinearProgressIndicator
+import me.anypods.app.ui.M3CircularProgressIndicator
 import me.anypods.app.ui.theme.AnyPodsTheme
 import me.anypods.app.updater.UpdateInfo
 import me.anypods.app.updater.UpdateManager
@@ -371,11 +374,7 @@ fun AnyPodsScreen(
                 },
                 actions = {
                     if (isCheckingUpdate) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        M3LoadingIndicator(size = 22.dp)
                         Spacer(modifier = Modifier.width(8.dp))
                     } else {
                         IconButton(onClick = onCheckForUpdates) {
@@ -384,6 +383,7 @@ fun AnyPodsScreen(
                     }
                     Button(
                         onClick = onRefresh,
+                        shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
@@ -405,7 +405,7 @@ fun AnyPodsScreen(
             // Hero Card
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(32.dp),
                 colors = CardDefaults.elevatedCardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
@@ -420,16 +420,16 @@ fun AnyPodsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .background(
-                                color = if (state.isConnected) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
-                                shape = RoundedCornerShape(16.dp)
+                                color = if (state.isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(50)
                             )
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
                                 .background(
-                                    color = if (state.isConnected) Color(0xFF2E7D32) else Color(0xFFEF6C00),
+                                    color = if (state.isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                     shape = CircleShape
                                 )
                         )
@@ -437,8 +437,8 @@ fun AnyPodsScreen(
                         Text(
                             text = if (state.isConnected) "Connected (${state.name})" else "Waiting for Earbuds",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (state.isConnected) Color(0xFF2E7D32) else Color(0xFFEF6C00)
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (state.isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
                         )
                     }
 
@@ -478,10 +478,10 @@ fun AnyPodsScreen(
                         }
 
                         if (isFetchingImage) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(36.dp),
-                                strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.primary
+                            M3LoadingIndicator(
+                                size = 46.dp,
+                                isContained = true,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.9f)
                             )
                         }
                     }
@@ -497,24 +497,24 @@ fun AnyPodsScreen(
 
                     // Web Photo Control Pill / Button
                     Surface(
-                        color = if (customBitmap != null) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(12.dp),
+                        color = if (customBitmap != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(50),
                         modifier = Modifier.clickable { showWebSearchDialog = true }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         ) {
                             Text(
-                                text = if (customBitmap != null) "🌐 Web Photo Active • Tap to Search/Change" else if (isFetchingImage) "🌐 Fetching photo from web..." else "🌐 Fetch Real Photo from Web",
+                                text = if (customBitmap != null) "🌐 Web Photo Active • Tap to Change" else if (isFetchingImage) "🌐 Fetching photo from web..." else "🌐 Fetch Real Photo from Web",
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (customBitmap != null) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onPrimaryContainer
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (customBitmap != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Brand Category Selector Filter Chips
                     val brands = listOf("All", "Apple", "Samsung", "Google", "Sony", "Nothing", "Beats", "OnePlus", "Universal")
@@ -528,23 +528,23 @@ fun AnyPodsScreen(
                         brands.forEach { brand ->
                             val isBrandSel = selectedBrand == brand
                             Surface(
-                                color = if (isBrandSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                shape = RoundedCornerShape(12.dp),
+                                color = if (isBrandSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                shape = RoundedCornerShape(50),
                                 modifier = Modifier
                                     .clickable { selectedBrand = brand }
                             ) {
                                 Text(
                                     text = brand,
-                                    fontSize = 11.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = if (isBrandSel) FontWeight.Bold else FontWeight.Medium,
                                     color = if (isBrandSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // All Earbud Models Horizontal Picker
                     val filteredModels = if (selectedBrand == "All") {
@@ -563,8 +563,8 @@ fun AnyPodsScreen(
                         filteredModels.forEach { model ->
                             val isSel = selectedDeviceModel == model.name
                             Surface(
-                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(16.dp),
                                 border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
                                 modifier = Modifier
                                     .clickable {
@@ -574,7 +574,7 @@ fun AnyPodsScreen(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                                 ) {
                                     Image(
                                         painter = painterResource(id = model.imageRes),
@@ -593,7 +593,7 @@ fun AnyPodsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
                         text = state.name,
@@ -620,19 +620,19 @@ fun AnyPodsScreen(
                         BatteryDial(
                             label = "Left Bud",
                             battery = state.leftBattery,
-                            color = Color(0xFF34C759),
+                            color = MaterialTheme.colorScheme.primary,
                             isCharging = state.isLeftCharging
                         )
                         BatteryDial(
                             label = "Case",
                             battery = state.caseBattery,
-                            color = Color(0xFF007AFF),
+                            color = MaterialTheme.colorScheme.tertiary,
                             isCharging = state.isCaseCharging
                         )
                         BatteryDial(
                             label = "Right Bud",
                             battery = state.rightBattery,
-                            color = Color(0xFF34C759),
+                            color = MaterialTheme.colorScheme.secondary,
                             isCharging = state.isRightCharging
                         )
                     }
@@ -642,9 +642,12 @@ fun AnyPodsScreen(
             // Quick Actions: Pop-up Trigger
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "AirPods Pop-up Card",
                         fontSize = 18.sp,
@@ -652,18 +655,18 @@ fun AnyPodsScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Show the Apple iOS style floating popup card with live battery gauges.",
+                        text = "Show the floating popup card with live battery gauges and instant status.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     Button(
                         onClick = onShowPopup,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF))
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Show AirPods Pop-up Card", color = Color.White)
+                        Text("Show AirPods Pop-up Card", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -671,9 +674,12 @@ fun AnyPodsScreen(
             // 1. Live Hardware Battery & Charging Dashboard (100% Automated)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -693,8 +699,8 @@ fun AnyPodsScreen(
                         }
                         FilledTonalButton(
                             onClick = onRefresh,
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                         ) {
                             Text("⚡ Sync", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
@@ -736,9 +742,12 @@ fun AnyPodsScreen(
             // 2. Noise Control Modes
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -750,12 +759,18 @@ fun AnyPodsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         if (currentNoiseMode == NoiseMode.ADAPTIVE) {
-                            Text(
-                                text = "Ambient: ${ambientDecibels} dB",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Text(
+                                    text = "Ambient: ${ambientDecibels} dB",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
@@ -770,8 +785,8 @@ fun AnyPodsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(16.dp)
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                shape = RoundedCornerShape(50)
                             )
                             .padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -811,9 +826,9 @@ fun AnyPodsScreen(
 
                     // --- Advanced ANC Intensity & Acoustic Seal Tuning ---
                     if (currentNoiseMode == NoiseMode.NOISE_CANCELLATION) {
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -826,8 +841,8 @@ fun AnyPodsScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Surface(
-                                color = Color(0xFFE8F5E9),
-                                shape = RoundedCornerShape(12.dp)
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(50)
                             ) {
                                 Text(
                                     text = when (ancIntensity) {
@@ -837,13 +852,13 @@ fun AnyPodsScreen(
                                     },
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E7D32),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         // Intensity level selector chips
                         Row(
@@ -853,19 +868,19 @@ fun AnyPodsScreen(
                             listOf(
                                 Triple("Ultra Studio", "Max isolation (-30 dB)", AncIntensity.ULTRA),
                                 Triple("Balanced", "Commute (-22 dB)", AncIntensity.BALANCED),
-                                Triple("Comfort", "No ear pressure (-15 dB)", AncIntensity.COMFORT)
+                                Triple("Comfort", "No pressure (-15 dB)", AncIntensity.COMFORT)
                             ).forEach { (title, subtitle, intensity) ->
                                 val isSel = ancIntensity == intensity
                                 Surface(
-                                    color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(16.dp),
                                     border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
                                     modifier = Modifier
                                         .weight(1f)
                                         .clickable { AudioEnhancer.setAncIntensity(intensity) }
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Text(
@@ -885,7 +900,7 @@ fun AnyPodsScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Anti-Hiss & Wind Shield Filter Toggle
                         Row(
@@ -914,15 +929,18 @@ fun AnyPodsScreen(
             // 3. Audio Intelligence
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Audio Intelligence",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -944,7 +962,7 @@ fun AnyPodsScreen(
                         )
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     val ambientNoiseDb by NoiseControlManager.ambientDecibels.collectAsState()
                     Row(
@@ -969,7 +987,7 @@ fun AnyPodsScreen(
                         )
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -996,9 +1014,12 @@ fun AnyPodsScreen(
             // 4. Spatial Audio (Apple 3D Binaural Soundstage)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "Spatial Audio (3D Surround)",
@@ -1008,14 +1029,14 @@ fun AnyPodsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(6.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text(
                                 text = "Binaural 3D",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -1025,7 +1046,7 @@ fun AnyPodsScreen(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1037,19 +1058,22 @@ fun AnyPodsScreen(
                             SpatialAudioMode.HEAD_TRACKED to "Wide Stage (3D)"
                         )
                         modes.forEach { (mode, name) ->
-                            OutlinedButton(
-                                onClick = { onSetSpatialAudio(mode) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (spatialAudioMode == mode) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
+                            val isSel = spatialAudioMode == mode
+                            Surface(
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onSetSpatialAudio(mode) }
                             ) {
                                 Text(
                                     text = name,
                                     fontSize = 11.sp,
                                     textAlign = TextAlign.Center,
-                                    fontWeight = if (spatialAudioMode == mode) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
                                 )
                             }
                         }
@@ -1060,9 +1084,12 @@ fun AnyPodsScreen(
             // 5. Headphone Accommodations (Apple Audiophile Tuning)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "Headphone Accommodations (EQ)",
@@ -1071,15 +1098,15 @@ fun AnyPodsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
-                            color = Color(0xFFE3F2FD),
-                            shape = RoundedCornerShape(6.dp)
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text(
                                 text = "Apple iOS Profile",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1976D2),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -1094,10 +1121,10 @@ fun AnyPodsScreen(
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Text("Tuning Profile:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1108,28 +1135,31 @@ fun AnyPodsScreen(
                             ToneProfile.BRIGHTNESS to "Brightness"
                         )
                         profiles.forEach { (prof, label) ->
-                            OutlinedButton(
-                                onClick = { onSetHeadphoneAccommodations(prof, toneIntensity) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (toneProfile == prof) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
+                            val isSel = toneProfile == prof
+                            Surface(
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onSetHeadphoneAccommodations(prof, toneIntensity) }
                             ) {
                                 Text(
                                     text = label,
                                     fontSize = 11.sp,
                                     textAlign = TextAlign.Center,
-                                    fontWeight = if (toneProfile == prof) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Text("Boost Level:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1140,19 +1170,22 @@ fun AnyPodsScreen(
                             ToneIntensity.STRONG to "Strong (+10dB)"
                         )
                         intensities.forEach { (intensity, label) ->
-                            OutlinedButton(
-                                onClick = { onSetHeadphoneAccommodations(toneProfile, intensity) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (toneIntensity == intensity) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
+                            val isSel = toneIntensity == intensity
+                            Surface(
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onSetHeadphoneAccommodations(toneProfile, intensity) }
                             ) {
                                 Text(
                                     text = label,
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     textAlign = TextAlign.Center,
-                                    fontWeight = if (toneIntensity == intensity) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp)
                                 )
                             }
                         }
@@ -1163,9 +1196,12 @@ fun AnyPodsScreen(
             // 6. Left / Right Audio Balance
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1176,16 +1212,22 @@ fun AnyPodsScreen(
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = when {
-                                lrBalance < -0.1f -> "L ${(-lrBalance * 100).toInt()}%"
-                                lrBalance > 0.1f -> "R ${(lrBalance * 100).toInt()}%"
-                                else -> "Center"
-                            },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                text = when {
+                                    lrBalance < -0.1f -> "L ${(-lrBalance * 100).toInt()}%"
+                                    lrBalance > 0.1f -> "R ${(lrBalance * 100).toInt()}%"
+                                    else -> "Center"
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -1193,7 +1235,7 @@ fun AnyPodsScreen(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Slider(
                         value = lrBalance,
@@ -1229,15 +1271,15 @@ fun AnyPodsScreen(
             // 8. Apple Ear Tip Fit Test (Acoustic Reflection)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp)
+                        .padding(20.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -1247,15 +1289,15 @@ fun AnyPodsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
-                            color = Color(0xFFE8F5E9),
-                            shape = RoundedCornerShape(6.dp)
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text(
                                 text = "Acoustic Sweep",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF2E7D32),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -1266,7 +1308,7 @@ fun AnyPodsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     if (fitTesting) {
                         Text(
@@ -1275,17 +1317,17 @@ fun AnyPodsScreen(
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LinearProgressIndicator(
+                        Spacer(modifier = Modifier.height(8.dp))
+                        M3LinearProgressIndicator(
                             progress = { fitProgress },
                             modifier = Modifier.fillMaxWidth(),
-                            strokeCap = StrokeCap.Round
+                            strokeHeight = 10.dp
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = onStopFitTest,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text("Cancel Test")
                         }
@@ -1306,7 +1348,7 @@ fun AnyPodsScreen(
                                         text = if (fitResult.isLeftGood) "Good Seal ✓" else "Adjust Tip",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
-                                        color = if (fitResult.isLeftGood) Color(0xFF34C759) else Color(0xFFFF9500)
+                                        color = if (fitResult.isLeftGood) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                                     )
                                     Spacer(modifier = Modifier.width(16.dp))
                                     Text(
@@ -1318,7 +1360,7 @@ fun AnyPodsScreen(
                                         text = if (fitResult.isRightGood) "Good Seal ✓" else "Adjust Tip",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
-                                        color = if (fitResult.isRightGood) Color(0xFF34C759) else Color(0xFFFF9500)
+                                        color = if (fitResult.isRightGood) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                                     )
                                 }
                                 Text(
@@ -1329,7 +1371,7 @@ fun AnyPodsScreen(
                             }
                             Button(
                                 onClick = onStartFitTest,
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(50)
                             ) {
                                 Text("Test Again")
                             }
@@ -1338,7 +1380,7 @@ fun AnyPodsScreen(
                         Button(
                             onClick = onStartFitTest,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text("Run Ear Tip Fit Test")
                         }
@@ -1349,15 +1391,15 @@ fun AnyPodsScreen(
             // 9. Hearing Health & Volume Limiter
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp)
+                        .padding(20.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1371,9 +1413,10 @@ fun AnyPodsScreen(
                                 fontSize = 17.sp
                             )
                             Text(
-                                text = "Est. Level: $estimatedDb dB SPL (WHO Safe <85dB)",
+                                text = "Est. Level: $estimatedDb dB SPL (Safe <85dB)",
                                 fontSize = 13.sp,
-                                color = if (estimatedDb <= 80) Color(0xFF34C759) else if (estimatedDb <= 85) Color(0xFFFF9500) else Color(0xFFFF3B30)
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (estimatedDb <= 80) MaterialTheme.colorScheme.primary else if (estimatedDb <= 85) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error
                             )
                         }
                         Switch(
@@ -1393,15 +1436,15 @@ fun AnyPodsScreen(
             // 10. iOS 18 Dynamic Island Pill
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp)
+                        .padding(20.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1431,15 +1474,15 @@ fun AnyPodsScreen(
             // 11. Quick Settings Tile & Home Widget Status
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(18.dp)
                 ) {
                     Text(
                         text = "Quick Controls Active",
@@ -1458,15 +1501,15 @@ fun AnyPodsScreen(
             // Software Update Card
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp)
+                        .padding(20.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1488,12 +1531,11 @@ fun AnyPodsScreen(
                         Button(
                             onClick = onCheckForUpdates,
                             enabled = !isCheckingUpdate && (downloadProgress < 0 || downloadProgress == 100),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             if (isCheckingUpdate) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
+                                M3LoadingIndicator(
+                                    size = 18.dp,
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -1508,13 +1550,13 @@ fun AnyPodsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
+                                    .padding(14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1532,6 +1574,7 @@ fun AnyPodsScreen(
                                 }
                                 Button(
                                     onClick = { onConfirmUpdate(updateInfo) },
+                                    shape = RoundedCornerShape(50),
                                     enabled = downloadProgress < 0 || downloadProgress == 100
                                 ) {
                                     Text(if (downloadProgress in 0..99) "$downloadProgress%" else "Install")
@@ -1551,19 +1594,20 @@ fun AnyPodsScreen(
                 onDismissRequest = {
                     if (downloadProgress < 0) onDismissUpdate()
                 },
+                shape = RoundedCornerShape(28.dp),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Update Available", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(6.dp)
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text(
                                 text = updateInfo.tagName,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
@@ -1578,7 +1622,7 @@ fun AnyPodsScreen(
                         if (updateInfo.releaseNotes.isNotBlank()) {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
@@ -1586,23 +1630,24 @@ fun AnyPodsScreen(
                                 Text(
                                     text = updateInfo.releaseNotes,
                                     fontSize = 12.sp,
-                                    modifier = Modifier.padding(8.dp),
+                                    modifier = Modifier.padding(10.dp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
                         if (downloadProgress in 0..100) {
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = if (downloadProgress == 100) "Download complete! Opening installer..." else "Downloading update: $downloadProgress%",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            LinearProgressIndicator(
+                            Spacer(modifier = Modifier.height(6.dp))
+                            M3LinearProgressIndicator(
                                 progress = { downloadProgress / 100f },
                                 modifier = Modifier.fillMaxWidth(),
-                                strokeCap = StrokeCap.Round
+                                strokeHeight = 10.dp
                             )
                         }
                     }
@@ -1610,6 +1655,7 @@ fun AnyPodsScreen(
                 confirmButton = {
                     Button(
                         onClick = { onConfirmUpdate(updateInfo) },
+                        shape = RoundedCornerShape(50),
                         enabled = downloadProgress < 0 || downloadProgress == 100,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
@@ -1618,7 +1664,10 @@ fun AnyPodsScreen(
                 },
                 dismissButton = {
                     if (downloadProgress < 0) {
-                        OutlinedButton(onClick = onDismissUpdate) {
+                        OutlinedButton(
+                            onClick = onDismissUpdate,
+                            shape = RoundedCornerShape(50)
+                        ) {
                             Text("Stay on Current Version")
                         }
                     }
@@ -1637,6 +1686,7 @@ fun AnyPodsScreen(
 
             AlertDialog(
                 onDismissRequest = { if (!isFetchingImage) showWebSearchDialog = false },
+                shape = RoundedCornerShape(28.dp),
                 title = {
                     Text("Search & Fetch Pod Photo", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 },
@@ -1652,12 +1702,13 @@ fun AnyPodsScreen(
                             onValueChange = { queryText = it },
                             label = { Text("Earbuds Model or Name") },
                             singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         if (isFetchingImage) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
+                                M3LoadingIndicator(size = 22.dp)
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Text("Searching & downloading photo...", fontSize = 12.sp)
                             }
                         }
@@ -1676,6 +1727,7 @@ fun AnyPodsScreen(
                                 showWebSearchDialog = false
                             }
                         },
+                        shape = RoundedCornerShape(50),
                         enabled = !isFetchingImage && queryText.isNotBlank()
                     ) {
                         Text(if (isFetchingImage) "Searching..." else "Search & Apply")
@@ -1719,35 +1771,38 @@ fun BatteryIndicatorPill(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                RoundedCornerShape(16.dp)
+                MaterialTheme.colorScheme.surfaceContainerHigh,
+                RoundedCornerShape(24.dp)
             )
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(
+            M3CircularProgressIndicator(
                 progress = { (level.coerceIn(0, 100) / 100f) },
-                modifier = Modifier.size(52.dp),
-                color = if (level > 20) Color(0xFF34C759) else Color(0xFFFF3B30),
-                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-                strokeWidth = 4.5.dp
+                modifier = Modifier.size(54.dp),
+                color = if (isCharging) MaterialTheme.colorScheme.tertiary else if (level > 20) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                strokeWidth = 5.dp
             )
             Text(
                 text = "$level%",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Text(
             text = label,
             fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = statusText,
             fontSize = 10.sp,
-            color = if (isCharging) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurfaceVariant
+            fontWeight = FontWeight.Medium,
+            color = if (isCharging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -1772,7 +1827,7 @@ fun DeviceBatteryControlSection(
                     text = "$level%",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = if (isCharging) Color(0xFF34C759) else MaterialTheme.colorScheme.primary
+                    color = if (isCharging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary
                 )
                 if (isCharging) {
                     Spacer(modifier = Modifier.width(4.dp))
@@ -1780,7 +1835,7 @@ fun DeviceBatteryControlSection(
                         text = "⚡ Charging",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp,
-                        color = Color(0xFF34C759)
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -1797,7 +1852,7 @@ fun DeviceBatteryControlSection(
                 OutlinedButton(
                     onClick = { onLevelChange(pct) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (level == pct) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                     )
@@ -1836,38 +1891,33 @@ fun BatteryDial(
     color: Color,
     isCharging: Boolean
 ) {
-    val progress = animateFloatAsState(
-        targetValue = if (battery < 0) 0f else battery / 100f,
-        label = "BatteryProgress"
-    )
-
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(76.dp)
+            modifier = Modifier.size(78.dp)
         ) {
-            CircularProgressIndicator(
-                progress = { progress.value },
+            M3CircularProgressIndicator(
+                progress = { if (battery < 0) 0f else battery / 100f },
                 modifier = Modifier.fillMaxSize(),
-                color = if (isCharging) Color(0xFF34C759) else color,
-                strokeWidth = 6.dp,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                strokeCap = StrokeCap.Round
+                color = if (isCharging) MaterialTheme.colorScheme.primary else color,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                strokeWidth = 6.dp
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (battery >= 0) "$battery%" else "--",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (isCharging) {
-                        Text(text = "⚡", fontSize = 12.sp, color = Color(0xFF34C759))
+                        Text(text = "⚡", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = label,
             fontSize = 12.sp,
@@ -1887,12 +1937,12 @@ fun NoiseControlSegment(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(
-                if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+            .padding(vertical = 12.dp, horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -1904,15 +1954,15 @@ fun NoiseControlSegment(
                 contentDescription = title,
                 modifier = Modifier.size(24.dp),
                 colorFilter = ColorFilter.tint(
-                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = title,
                 fontSize = 11.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
         }
