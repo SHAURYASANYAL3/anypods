@@ -77,9 +77,11 @@ object UpdateManager {
                         for (i in 0 until assets.length()) {
                             val asset = assets.getJSONObject(i)
                             val name = asset.optString("name", "")
-                            if (name.endsWith(".apk", ignoreCase = true)) {
+                            if (name.equals("app-release.apk", ignoreCase = true)) {
                                 apkUrl = asset.optString("browser_download_url")
                                 break
+                            } else if (apkUrl == null && name.endsWith(".apk", ignoreCase = true)) {
+                                apkUrl = asset.optString("browser_download_url")
                             }
                         }
                     }
