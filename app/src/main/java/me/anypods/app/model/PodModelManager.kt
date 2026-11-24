@@ -129,17 +129,21 @@ object PodModelManager {
             lower.contains("airpod") || lower.contains("air pod") ->
                 getModelById("airpods_pro_2")
 
-            // Samsung Galaxy Buds
-            lower.contains("galaxy") && (lower.contains("3") || lower.contains("blade")) ->
-                getModelById("galaxy_buds_3_pro")
-            lower.contains("galaxy") || lower.contains("buds pro") || lower.contains("buds2") || lower.contains("buds live") || lower.contains("buds fe") ->
-                getModelById("galaxy_buds_pro_2")
-
             // Google Pixel Buds
             lower.contains("pixel") && (lower.contains("a-series") || lower.contains(" a ") || lower.endsWith(" a")) ->
                 getModelById("pixel_buds_a")
             lower.contains("pixel") ->
                 getModelById("pixel_buds_pro")
+
+            // OnePlus
+            lower.contains("oneplus") || lower.contains("nord buds") ->
+                getModelById("oneplus_buds_pro_2")
+
+            // Samsung Galaxy Buds
+            lower.contains("galaxy") && (lower.contains("3") || lower.contains("blade")) ->
+                getModelById("galaxy_buds_3_pro")
+            lower.contains("galaxy") || lower.contains("buds pro") || lower.contains("buds2") || lower.contains("buds live") || lower.contains("buds fe") ->
+                getModelById("galaxy_buds_pro_2")
 
             // Other brands
             lower.contains("nothing") || lower.contains("ear (") || lower.contains("ear 1") || lower.contains("ear 2") ->
