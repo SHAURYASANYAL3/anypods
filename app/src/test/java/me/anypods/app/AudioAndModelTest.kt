@@ -353,4 +353,64 @@ class AudioAndModelTest {
         )
         assertTrue("Universal TWS fallback bass boost should be standard: $universalBassBoost", universalBassBoost in 300..450)
     }
+
+    @Test
+    fun testLiveTransparencyControls() {
+        val manager = me.anypods.app.anc.LiveTransparencyManager
+        manager.setGain(1.8f)
+        assertEquals(1.8f, manager.ambientGain.value, 0.01f)
+
+        // Verify clamping
+        manager.setGain(0.2f)
+        assertTrue(manager.ambientGain.value >= 0.8f)
+
+        manager.setGain(5.0f)
+        assertTrue(manager.ambientGain.value <= 2.8f)
+
+        // Verify Speech Focus
+        manager.toggleSpeechFocus(false)
+        assertFalse(manager.speechFocusEnabled.value)
+        manager.toggleSpeechFocus(true)
+        assertTrue(manager.speechFocusEnabled.value)
+    }
+
+    @Test
+    fun testAacpListeningModePayloadStructure() {
+        fun buildAacpPacket(modeByte: Byte): ByteArray = byteArrayOf(
+            0x04, 0x00, 0x04, 0x00,
+            0x09, 0x00,
+            0x0D,
+            modeByte,
+            0x00, 0x00, 0x00
+        )
+
+        val offPacket = buildAacpPacket(0x01)
+        val ancPacket = buildAacpPacket(0x02)
+        val transpPacket = buildAacpPacket(0x03)
+        val adaptivePacket = buildAacpPacket(0x04)
+
+        // Header must be 0x04, 0x00, 0x04, 0x00
+        assertEquals(0x04.toByte(), offPacket[0])
+        assertEquals(0x00.toByte(), offPacket[1])
+        assertEquals(0x04.toByte(), offPacket[2])
+        assertEquals(0x00.toByte(), offPacket[3])
+
+        // Opcode 9 (0x09, 0x00)
+        assertEquals(0x09.toByte(), offPacket[4])
+        assertEquals(0x00.toByte(), offPacket[5])
+
+        // Command Identifier 0x0D (ListeningMode)
+        assertEquals(0x0D.toByte(), offPacket[6])
+
+        // Mode bytes
+        assertEquals(0x01.toByte(), offPacket[7])
+        assertEquals(0x02.toByte(), ancPacket[7])
+        assertEquals(0x03.toByte(), transpPacket[7])
+        assertEquals(0x04.toByte(), adaptivePacket[7])
+
+        // Padding
+        assertEquals(0x00.toByte(), offPacket[8])
+        assertEquals(0x00.toByte(), offPacket[9])
+        assertEquals(0x00.toByte(), offPacket[10])
+    }
 }

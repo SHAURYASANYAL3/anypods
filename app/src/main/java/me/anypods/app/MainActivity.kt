@@ -964,6 +964,131 @@ fun AnyPodsScreen(
                             )
                         }
                     }
+
+                    // --- Live Transparency Pass-Through Controls ---
+                    if (currentNoiseMode == NoiseMode.TRANSPARENCY) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        val passThroughActive by me.anypods.app.anc.LiveTransparencyManager.isLiveTransparencyActive.collectAsState()
+                        val currentAmbientGain by me.anypods.app.anc.LiveTransparencyManager.ambientGain.collectAsState()
+                        val speechFocus by me.anypods.app.anc.LiveTransparencyManager.speechFocusEnabled.collectAsState()
+                        val hasMicPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Ambient Sound Boost",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Surface(
+                                color = if (passThroughActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Text(
+                                    text = if (passThroughActive) "⚡ Live Pass-Through Active" else if (!hasMicPermission) "⚠️ Mic Permission Needed" else "⚡ Active",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (passThroughActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+
+                        if (!hasMicPermission) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    (context as? androidx.activity.ComponentActivity)?.let { act ->
+                                        androidx.core.app.ActivityCompat.requestPermissions(
+                                            act,
+                                            arrayOf(Manifest.permission.RECORD_AUDIO),
+                                            200
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text("Grant Mic Permission for Live Transparency", fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Ambient Boost Selector Chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                Triple("Natural", "1.2x Ambient", 1.2f),
+                                Triple("Balanced", "1.6x Clear", 1.6f),
+                                Triple("Amplified", "2.2x High", 2.2f)
+                            ).forEach { (title, subtitle, gain) ->
+                                val isSel = kotlin.math.abs(currentAmbientGain - gain) < 0.2f
+                                Surface(
+                                    color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { me.anypods.app.anc.LiveTransparencyManager.setGain(gain) }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = title,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = subtitle,
+                                            fontSize = 9.sp,
+                                            color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Speech Focus / Voice Isolation Toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Speech Intelligibility Focus", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(
+                                    "Enhances vocal presence so human conversation is crisp and clear.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = speechFocus,
+                                onCheckedChange = { me.anypods.app.anc.LiveTransparencyManager.toggleSpeechFocus(it) }
+                            )
+                        }
+                    }
                 }
             }
 

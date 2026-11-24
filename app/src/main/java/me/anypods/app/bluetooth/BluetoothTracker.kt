@@ -611,22 +611,78 @@ object BluetoothTracker {
     }
 
     fun sendHardwareListeningMode(mode: me.anypods.app.anc.NoiseMode) {
+        val dev = getConnectedDevice() ?: return
+        val modeVal = when (mode) {
+            me.anypods.app.anc.NoiseMode.NOISE_CANCELLATION -> 0x02.toByte()
+            me.anypods.app.anc.NoiseMode.TRANSPARENCY -> 0x03.toByte()
+            me.anypods.app.anc.NoiseMode.OFF -> 0x01.toByte()
+            me.anypods.app.anc.NoiseMode.ADAPTIVE -> 0x04.toByte()
+        }
+
+        // 1. Dispatch FastPair / Android System Bluetooth Metadata keys 17 and 25
         try {
-            val dev = getConnectedDevice() ?: return
             val method = dev.javaClass.getMethod(
                 "setMetadata",
                 Int::class.javaPrimitiveType ?: Int::class.java,
                 ByteArray::class.java
             )
-            val modeVal = when (mode) {
-                me.anypods.app.anc.NoiseMode.NOISE_CANCELLATION -> byteArrayOf(0x02)
-                me.anypods.app.anc.NoiseMode.TRANSPARENCY -> byteArrayOf(0x03)
-                me.anypods.app.anc.NoiseMode.OFF -> byteArrayOf(0x01)
-                me.anypods.app.anc.NoiseMode.ADAPTIVE -> byteArrayOf(0x04)
+            method.invoke(dev, 17, byteArrayOf(modeVal))
+            try { method.invoke(dev, 25, byteArrayOf(modeVal)) } catch (_: Exception) {}
+            Log.d(TAG, "Dispatched setMetadata listening mode $mode to ${dev.name}")
+        } catch (e: Exception) {
+            Log.d(TAG, "setMetadata listening mode unavailable on this ROM: ${e.message}")
+        }
+
+        // 2. Direct Apple Accessory Protocol (AACP) listening mode packet
+        // Opcode 0x0009 (Control), ID 0x0D (ListeningMode), Mode byte, padding
+        val aacpPayload = byteArrayOf(
+            0x04, 0x00, 0x04, 0x00,
+            0x09, 0x00,
+            0x0D,
+            modeVal,
+            0x00, 0x00, 0x00
+        )
+
+        scope.launch(Dispatchers.IO) {
+            // Attempt L2CAP channel PSM 0x1001 (standard Apple Accessory channel)
+            var l2capSocket: android.bluetooth.BluetoothSocket? = null
+            try {
+                l2capSocket = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    dev.createInsecureL2capChannel(0x1001)
+                } else {
+                    val m = dev.javaClass.getMethod("createInsecureL2capSocket", Int::class.javaPrimitiveType)
+                    m.invoke(dev, 0x1001) as? android.bluetooth.BluetoothSocket
+                }
+                l2capSocket?.let { s ->
+                    s.connect()
+                    val out = s.outputStream
+                    out.write(aacpPayload)
+                    out.flush()
+                    Log.d(TAG, "Successfully sent AACP listening mode $modeVal over L2CAP to ${dev.name}")
+                    s.close()
+                    return@launch
+                }
+            } catch (e: Exception) {
+                try { l2capSocket?.close() } catch (_: Exception) {}
             }
-            method.invoke(dev, 17, modeVal)
-            Log.d(TAG, "Dispatched hardware listening mode $mode to ${dev.name}")
-        } catch (_: Exception) {}
+
+            // Fallback: Attempt Apple RFCOMM socket (UUID 74ec2172-0bad-4d01-8f77-997b2be0722a)
+            var rfcommSocket: android.bluetooth.BluetoothSocket? = null
+            try {
+                val appleUuid = UUID.fromString("74ec2172-0bad-4d01-8f77-997b2be0722a")
+                rfcommSocket = dev.createInsecureRfcommSocketToServiceRecord(appleUuid)
+                rfcommSocket?.let { s ->
+                    s.connect()
+                    val out = s.outputStream
+                    out.write(aacpPayload)
+                    out.flush()
+                    Log.d(TAG, "Successfully sent AACP listening mode $modeVal over RFCOMM to ${dev.name}")
+                    s.close()
+                }
+            } catch (e: Exception) {
+                try { rfcommSocket?.close() } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun readGattBattery(device: BluetoothDevice) {

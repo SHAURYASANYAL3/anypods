@@ -55,10 +55,27 @@ object NoiseControlManager {
         me.anypods.app.bluetooth.BluetoothTracker.sendHardwareListeningMode(mode)
 
         when (mode) {
-            NoiseMode.NOISE_CANCELLATION -> AudioEnhancer.applyNoiseCancellationMode()
-            NoiseMode.TRANSPARENCY -> AudioEnhancer.applyTransparencyMode()
-            NoiseMode.OFF -> AudioEnhancer.applyOffMode()
-            NoiseMode.ADAPTIVE -> {}
+            NoiseMode.NOISE_CANCELLATION -> {
+                LiveTransparencyManager.stop()
+                AudioEnhancer.applyNoiseCancellationMode()
+            }
+            NoiseMode.TRANSPARENCY -> {
+                LiveTransparencyManager.start(context)
+                AudioEnhancer.applyTransparencyMode()
+            }
+            NoiseMode.OFF -> {
+                LiveTransparencyManager.stop()
+                AudioEnhancer.applyOffMode()
+            }
+            NoiseMode.ADAPTIVE -> {
+                if (ambientDecibels.value > 62) {
+                    LiveTransparencyManager.stop()
+                    AudioEnhancer.applyNoiseCancellationMode()
+                } else {
+                    LiveTransparencyManager.start(context)
+                    AudioEnhancer.applyTransparencyMode()
+                }
+            }
         }
 
         updateAudioMonitor(context)
@@ -128,6 +145,7 @@ object NoiseControlManager {
                                 lastSpokenTime = now
                                 if (!isDucked) {
                                     duckMediaVolume(context)
+                                    LiveTransparencyManager.start(context)
                                     AudioEnhancer.applyTransparencyMode()
                                 }
                             } else if (isDucked && (now - lastSpokenTime > 2500)) {
@@ -141,9 +159,12 @@ object NoiseControlManager {
                             val target = if (db > 62) NoiseMode.NOISE_CANCELLATION else NoiseMode.TRANSPARENCY
                             if (target != lastAdaptiveTarget) {
                                 lastAdaptiveTarget = target
+                                me.anypods.app.bluetooth.BluetoothTracker.sendHardwareListeningMode(target)
                                 if (target == NoiseMode.NOISE_CANCELLATION) {
+                                    LiveTransparencyManager.stop()
                                     AudioEnhancer.applyNoiseCancellationMode()
                                 } else {
+                                    LiveTransparencyManager.start(context)
                                     AudioEnhancer.applyTransparencyMode()
                                 }
                             }
