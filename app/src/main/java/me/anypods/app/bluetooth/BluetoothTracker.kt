@@ -319,6 +319,7 @@ object BluetoothTracker {
                 updateConnectedDevice(connectedDevice, hwBattery)
                 readMetadata(connectedDevice)
                 readGattBattery(connectedDevice)
+                AirPodsL2capClient.connect(connectedDevice)
             } else {
                 // Only mark isConnected = false if Bluetooth proxies have had a chance to connect
                 val proxiesReady = (bluetoothA2dp != null || bluetoothHeadset != null)
@@ -470,12 +471,14 @@ object BluetoothTracker {
         readMetadata(device)
         readGattBattery(device)
         startAppleBeaconScanning()
+        AirPodsL2capClient.connect(device)
     }
 
     fun onAclDisconnected(device: BluetoothDevice) {
         if (_earbudState.value.address == device.address) {
             _earbudState.value = _earbudState.value.copy(isConnected = false)
             DiagnosticManager.logEvent("Bluetooth", "Disconnected: ${device.name ?: "Unknown"}")
+            AirPodsL2capClient.disconnect()
         }
     }
 
@@ -582,6 +585,40 @@ object BluetoothTracker {
         _earbudState.value = _earbudState.value.copy(caseBattery = level.coerceIn(0, 100), isCaseCharging = isCharging)
     }
 
+    fun setInEarStatus(leftInEar: Boolean, rightInEar: Boolean) {
+        _earbudState.value = _earbudState.value.copy(
+            isLeftInEar = leftInEar,
+            isRightInEar = rightInEar
+        )
+    }
+
+    fun updateBatteryFromL2cap(
+        leftLevel: Int,
+        leftCharging: Boolean,
+        rightLevel: Int,
+        rightCharging: Boolean,
+        caseLevel: Int,
+        caseCharging: Boolean
+    ) {
+        val cur = _earbudState.value
+        val effLeft = if (leftLevel >= 0) leftLevel else cur.leftBattery
+        val effRight = if (rightLevel >= 0) rightLevel else cur.rightBattery
+        val effCase = if (caseLevel >= 0) caseLevel else cur.caseBattery
+        _earbudState.value = cur.copy(
+            leftBattery = effLeft,
+            isLeftCharging = leftCharging,
+            rightBattery = effRight,
+            isRightCharging = rightCharging,
+            caseBattery = effCase,
+            isCaseCharging = caseCharging
+        )
+        prefs?.edit()
+            ?.putInt(KEY_LEFT_BATTERY, effLeft)
+            ?.putInt(KEY_RIGHT_BATTERY, effRight)
+            ?.putInt(KEY_CASE_BATTERY, effCase)
+            ?.apply()
+    }
+
     private fun readMetadata(device: BluetoothDevice) {
         try {
             val leftBatStr = getMetadataString(device, 10)
@@ -644,6 +681,9 @@ object BluetoothTracker {
     }
 
     fun sendHardwareListeningMode(mode: me.anypods.app.anc.NoiseMode) {
+        // Direct L2CAP channel (PSM 0x1001) dispatch for AirPods / Beats
+        AirPodsL2capClient.sendNoiseControl(mode)
+
         val dev = getConnectedDevice() ?: return
         val modeVal = when (mode) {
             me.anypods.app.anc.NoiseMode.NOISE_CANCELLATION -> 0x02.toByte()

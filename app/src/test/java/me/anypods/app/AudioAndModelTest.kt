@@ -462,4 +462,69 @@ class AudioAndModelTest {
         )
         assertTrue("Head tracked 3D audio must provide cinematic sub-bass (> +0.4f): $headTrackedBass", headTrackedBass > 0.40f)
     }
+
+    @Test
+    fun testAirPodsL2capControlPackets() {
+        // Handshake packet verification
+        assertEquals(16, me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_HANDSHAKE.size)
+        assertEquals(0x00.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_HANDSHAKE[0])
+        assertEquals(0x04.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_HANDSHAKE[2])
+        assertEquals(0x01.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_HANDSHAKE[4])
+        assertEquals(0x02.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_HANDSHAKE[6])
+
+        // Features request verification
+        assertEquals(14, me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_SET_FEATURES.size)
+        assertEquals(0x4D.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_SET_FEATURES[4])
+        assertEquals(0xD7.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_SET_FEATURES[6])
+
+        // Notification request verification
+        assertEquals(11, me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_REQUEST_NOTIFICATIONS.size)
+        assertEquals(0x0F.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_REQUEST_NOTIFICATIONS[4])
+        assertEquals(0xFF.toByte(), me.anypods.app.bluetooth.AirPodsL2capClient.PACKET_REQUEST_NOTIFICATIONS[6])
+
+        // Noise mode packets (11 bytes: 04 00 04 00 09 00 0D [mode] 00 00 00)
+        val ancPacket = me.anypods.app.bluetooth.AirPodsL2capClient.buildControlPacket(
+            me.anypods.app.bluetooth.AirPodsL2capClient.ID_LISTENING_MODE,
+            0x02
+        )
+        assertEquals(11, ancPacket.size)
+        assertEquals(0x0D.toByte(), ancPacket[6])
+        assertEquals(0x02.toByte(), ancPacket[7])
+
+        val transparencyPacket = me.anypods.app.bluetooth.AirPodsL2capClient.buildControlPacket(
+            me.anypods.app.bluetooth.AirPodsL2capClient.ID_LISTENING_MODE,
+            0x03
+        )
+        assertEquals(0x03.toByte(), transparencyPacket[7])
+
+        val offPacket = me.anypods.app.bluetooth.AirPodsL2capClient.buildControlPacket(
+            me.anypods.app.bluetooth.AirPodsL2capClient.ID_LISTENING_MODE,
+            0x01
+        )
+        assertEquals(0x01.toByte(), offPacket[7])
+
+        // Conversational Awareness packet (ID 0x28)
+        val caPacket = me.anypods.app.bluetooth.AirPodsL2capClient.buildControlPacket(
+            me.anypods.app.bluetooth.AirPodsL2capClient.ID_CONVERSATION_AWARENESS,
+            0x01
+        )
+        assertEquals(0x28.toByte(), caPacket[6])
+        assertEquals(0x01.toByte(), caPacket[7])
+
+        // Stem Volume Swipe packet (ID 0x25)
+        val swipePacket = me.anypods.app.bluetooth.AirPodsL2capClient.buildControlPacket(
+            me.anypods.app.bluetooth.AirPodsL2capClient.ID_VOLUME_SWIPE,
+            0x01
+        )
+        assertEquals(0x25.toByte(), swipePacket[6])
+        assertEquals(0x01.toByte(), swipePacket[7])
+
+        // One-Bud ANC packet (ID 0x1B)
+        val oneBudPacket = me.anypods.app.bluetooth.AirPodsL2capClient.buildControlPacket(
+            me.anypods.app.bluetooth.AirPodsL2capClient.ID_ONE_BUD_ANC,
+            0x01
+        )
+        assertEquals(0x1B.toByte(), oneBudPacket[6])
+        assertEquals(0x01.toByte(), oneBudPacket[7])
+    }
 }

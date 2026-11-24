@@ -86,6 +86,32 @@ object NoiseControlManager {
     }
 
     /**
+     * Synchronizes NoiseMode reported by hardware stem gesture over L2CAP.
+     * Updates local state and DSP without re-dispatching back to hardware.
+     */
+    fun syncFromHardware(mode: NoiseMode) {
+        if (_currentMode.value == mode) return
+        _currentMode.value = mode
+        Log.d(TAG, "Hardware listening mode synchronized: $mode")
+        when (mode) {
+            NoiseMode.NOISE_CANCELLATION -> {
+                LiveTransparencyManager.stop()
+                AudioEnhancer.applyNoiseCancellationMode()
+            }
+            NoiseMode.TRANSPARENCY -> {
+                AudioEnhancer.applyTransparencyMode()
+            }
+            NoiseMode.OFF -> {
+                LiveTransparencyManager.stop()
+                AudioEnhancer.applyOffMode()
+            }
+            NoiseMode.ADAPTIVE -> {
+                AudioEnhancer.applyTransparencyMode()
+            }
+        }
+    }
+
+    /**
      * Ultra-low-latency real-time Software Transparency passthrough.
      * Captures ambient sound via microphone and streams it live into the earbuds
      * with high-pass vocal filtering and soft-knee limiting.
@@ -365,6 +391,7 @@ object NoiseControlManager {
     @SuppressLint("MissingPermission")
     fun toggleConversationAwareness(context: Context, enabled: Boolean) {
         conversationAwarenessEnabled.value = enabled
+        me.anypods.app.bluetooth.AirPodsL2capClient.sendConversationAwareness(enabled)
         if (!enabled) {
             restoreMediaVolume(context)
         }
