@@ -60,7 +60,6 @@ object NoiseControlManager {
 
         when (mode) {
             NoiseMode.NOISE_CANCELLATION -> {
-            NoiseMode.NOISE_CANCELLATION -> {
                 LiveTransparencyManager.stop()
                 AudioEnhancer.applyNoiseCancellationMode()
             }
@@ -80,7 +79,6 @@ object NoiseControlManager {
                     LiveTransparencyManager.start(context)
                     AudioEnhancer.applyTransparencyMode()
                 }
-            }
             }
         }
 
