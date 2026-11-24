@@ -3,7 +3,9 @@ package me.anypods.app.ui
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -257,6 +259,186 @@ fun BalancePermissionDialog(
                 shape = RoundedCornerShape(50)
             ) {
                 Text("Copy ADB Command")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+fun DiagnosticConsentDialog(
+    show: Boolean,
+    onConfirm: (Boolean) -> Unit
+) {
+    if (!show) return
+
+    AlertDialog(
+        onDismissRequest = { onConfirm(false) },
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("📊", fontSize = 18.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Help Improve AnyPods", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Would you like to share anonymous diagnostic logs? Sharing helps developers tune frequency curves, fix connection bugs, and support your specific phone and earbuds better.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "🔒 Privacy-First Guarantee:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "• Includes: Device model, Android OS version, detected AirPods model, audio frequencies & EQ bands.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "• Excludes: MAC addresses are masked. NEVER collects names, accounts, locations, or audio recordings.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Text(
+                    text = "You can change this anytime under Diagnostics & Feedback.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(true) },
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("Agree & Share Diagnostics")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = { onConfirm(false) },
+                shape = RoundedCornerShape(50)
+            ) {
+                Text("No Thanks")
+            }
+        }
+    )
+}
+
+@Composable
+fun DiagnosticReportDialog(
+    show: Boolean,
+    reportText: String,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (!show) return
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Diagnostic Report", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = "Anonymous",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "This report contains only technical audio and device configuration details:",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = reportText,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(reportText))
+                        Toast.makeText(context, "Diagnostic report copied to clipboard!", Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text("Copy")
+                }
+                Button(
+                    onClick = {
+                        onShare()
+                        onDismiss()
+                    },
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text("Share Logs")
+                }
             }
         },
         dismissButton = {

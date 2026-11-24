@@ -44,6 +44,7 @@ import me.anypods.app.anc.NoiseControlManager
 import me.anypods.app.anc.NoiseMode
 import me.anypods.app.audio.AncIntensity
 import me.anypods.app.audio.AudioEnhancer
+import me.anypods.app.audio.FrequencyTuningMode
 import me.anypods.app.audio.SpatialAudioMode
 import me.anypods.app.audio.ToneIntensity
 import me.anypods.app.audio.ToneProfile
@@ -62,10 +63,15 @@ import me.anypods.app.ui.M3CircularProgressIndicator
 import me.anypods.app.ui.AudioBalanceCard
 import me.anypods.app.ui.SpatialAudioCard
 import me.anypods.app.ui.HeadphoneAccommodationsCard
+import me.anypods.app.ui.AirPodsFrequencyTuningCard
+import me.anypods.app.ui.DiagnosticSettingsCard
+import me.anypods.app.ui.DiagnosticConsentDialog
+import me.anypods.app.ui.DiagnosticReportDialog
 import me.anypods.app.ui.SoftwareUpdateDialog
 import me.anypods.app.ui.WebImageSearchDialog
 import me.anypods.app.ui.BalancePermissionDialog
 import me.anypods.app.ui.theme.AnyPodsTheme
+import me.anypods.app.diagnostics.DiagnosticManager
 import me.anypods.app.updater.UpdateInfo
 import me.anypods.app.updater.UpdateManager
 import me.anypods.app.audio.EarTipFitTester
@@ -118,6 +124,7 @@ class MainActivity : ComponentActivity() {
             val spatialMode by AudioEnhancer.currentSpatialMode.collectAsState()
             val toneProfile by AudioEnhancer.currentToneProfile.collectAsState()
             val toneIntensity by AudioEnhancer.currentToneIntensity.collectAsState()
+            val tuningMode by AudioEnhancer.currentTuningMode.collectAsState()
             val lrBalance by AudioEnhancer.currentBalance.collectAsState()
             val ancIntensity by AudioEnhancer.currentAncIntensity.collectAsState()
             val antiHiss by AudioEnhancer.antiHissWindReduction.collectAsState()
@@ -146,6 +153,10 @@ class MainActivity : ComponentActivity() {
                 spatialAudioMode = spatialMode,
                 toneProfile = toneProfile,
                 toneIntensity = toneIntensity,
+                tuningMode = tuningMode,
+                onSetTuningMode = {
+                    AudioEnhancer.setFrequencyTuningMode(it)
+                },
                 lrBalance = lrBalance,
                 updateInfo = updateInfo,
                 isCheckingUpdate = isCheckingUpdate,
@@ -289,6 +300,8 @@ fun AnyPodsScreen(
     spatialAudioMode: SpatialAudioMode,
     toneProfile: ToneProfile,
     toneIntensity: ToneIntensity,
+    tuningMode: FrequencyTuningMode,
+    onSetTuningMode: (FrequencyTuningMode) -> Unit,
     lrBalance: Float,
     updateInfo: UpdateInfo?,
     isCheckingUpdate: Boolean,
@@ -329,6 +342,17 @@ fun AnyPodsScreen(
     var showWebSearchDialog by remember { mutableStateOf(false) }
     var showBalanceDialog by remember { mutableStateOf(false) }
 
+    val isDiagnosticConsentGranted by DiagnosticManager.consentGranted.collectAsState()
+    var showReportDialog by remember { mutableStateOf(false) }
+    var showConsentDialog by remember { mutableStateOf(false) }
+    var reportPreviewText by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        if (DiagnosticManager.shouldShowConsentPrompt(context)) {
+            showConsentDialog = true
+        }
+    }
+
     val customBitmap = remember(state.name, imageVersion) {
         PodImageManager.getDeviceBitmap(context, state.name)
     }
@@ -339,11 +363,16 @@ fun AnyPodsScreen(
     }
 
     // Auto-detect matching pod model when Bluetooth connects, and auto-fetch web image
-    LaunchedEffect(state.name, state.isConnected) {
+    LaunchedEffect(state.name, state.isConnected, state.modelId) {
         if (state.isConnected && state.name.isNotEmpty() && state.name != "Wireless Earbuds") {
-            val detected = PodModelManager.detectModel(state.name)
+            val detected = if (state.modelId.isNotEmpty() && state.modelId != "airpods_pro_2") {
+                PodModelManager.getModelById(state.modelId)
+            } else {
+                PodModelManager.detectModel(state.name)
+            }
             selectedDeviceModel = detected.name
             PodModelManager.saveSelectedModel(context, detected.id)
+            AudioEnhancer.setTargetModel(detected.id)
             PodImageManager.autoFetchIfMissing(context, state.name)
         }
     }
@@ -578,6 +607,7 @@ fun AnyPodsScreen(
                                     .clickable {
                                         selectedDeviceModel = model.name
                                         PodModelManager.saveSelectedModel(context, model.id)
+                                        AudioEnhancer.setTargetModel(model.id)
                                     }
                             ) {
                                 Row(
@@ -1032,7 +1062,14 @@ fun AnyPodsScreen(
                 onSetHeadphoneAccommodations = onSetHeadphoneAccommodations
             )
 
-            // 6. Left / Right Audio Balance
+            // 6. Dedicated AirPods Frequency Tuning (Hardware-calibrated curves)
+            AirPodsFrequencyTuningCard(
+                currentModelName = selectedDeviceModel,
+                tuningMode = tuningMode,
+                onSetTuningMode = onSetTuningMode
+            )
+
+            // 7. Left / Right Audio Balance
             AudioBalanceCard(
                 lrBalance = lrBalance,
                 hasBalancePermission = hasBalancePermission,
@@ -1284,6 +1321,25 @@ fun AnyPodsScreen(
                 }
             }
 
+            // Diagnostics & Telemetry Card
+            DiagnosticSettingsCard(
+                isConsentGranted = isDiagnosticConsentGranted,
+                onToggleConsent = { granted ->
+                    DiagnosticManager.setConsentGranted(context, granted)
+                },
+                onViewReport = {
+                    reportPreviewText = DiagnosticManager.buildDiagnosticReport(context, state)
+                    showReportDialog = true
+                },
+                onShareReport = {
+                    if (!isDiagnosticConsentGranted) {
+                        showConsentDialog = true
+                    } else {
+                        DiagnosticManager.shareReport(context, state)
+                    }
+                }
+            )
+
             // Software Update Card
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -1395,6 +1451,28 @@ fun AnyPodsScreen(
         BalancePermissionDialog(
             show = showBalanceDialog,
             onDismiss = { showBalanceDialog = false }
+        )
+
+        // Diagnostic Sharing Consent Dialog
+        DiagnosticConsentDialog(
+            show = showConsentDialog,
+            onConfirm = { granted ->
+                DiagnosticManager.setConsentGranted(context, granted)
+                showConsentDialog = false
+                if (granted) {
+                    Toast.makeText(context, "Diagnostic sharing enabled. Thank you for supporting AnyPods!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+
+        // Diagnostic Report Preview & Share Dialog
+        DiagnosticReportDialog(
+            show = showReportDialog,
+            reportText = reportPreviewText,
+            onShare = {
+                DiagnosticManager.shareReport(context, state)
+            },
+            onDismiss = { showReportDialog = false }
         )
     }
 }

@@ -46,6 +46,14 @@ enum class AncIntensity {
     COMFORT     // Gentle / Zero Pressure (Airy isolation, eliminates eardrum fatigue)
 }
 
+enum class FrequencyTuningMode(val title: String, val subtitle: String) {
+    MODEL_AUTO("Model Auto-Tuned", "Hardware-calibrated acoustic curve tuned specifically for your AirPods"),
+    AUDIOPHILE_HARMAN("Audiophile Reference", "Harman-target studio curve with deep sub-bass and pristine vocal separation"),
+    DEEP_BASS("Deep Bass Boost", "Acoustic low-shelf bass boost (+6dB) tuned for open and sealed AirPods"),
+    VOCAL_CLARITY("Vocal & Podcast Clarity", "Forward speech clarity, boosted upper-mids, and sibilance smoothing"),
+    STUDIO_FLAT("Studio Flat", "Flat mastering response with linear driver excursion")
+}
+
 data class SessionAudioEffects(
     val sessionId: Int,
     var equalizer: Equalizer?,
@@ -56,7 +64,7 @@ data class SessionAudioEffects(
 object AudioEnhancer {
     private const val TAG = "AnyPods.AudioEnhancer"
 
-    // ponytail: Cap concurrent audio sessions to 4 to prevent external DoS on audioserver
+    // Cap concurrent audio sessions to 4 to prevent external DoS on audioserver
     private const val MAX_CONCURRENT_SESSIONS = 4
 
     // Active audio sessions (Spotify, YouTube Music, Apple Music, VLC, plus global session 0)
@@ -77,6 +85,10 @@ object AudioEnhancer {
     val currentAncIntensity = MutableStateFlow(AncIntensity.ULTRA)
     val antiHissWindReduction = MutableStateFlow(true)
 
+    // Dedicated AirPods Frequency Tuning Pipeline
+    val currentTuningMode = MutableStateFlow(FrequencyTuningMode.MODEL_AUTO)
+    val currentActiveModelId = MutableStateFlow("airpods_pro_2")
+
     init {
         // Register default global session 0 as foundational fallback
         registerSession(0)
@@ -84,6 +96,20 @@ object AudioEnhancer {
 
     fun initAudioEffects(audioSessionId: Int = 0) {
         registerSession(audioSessionId)
+    }
+
+    fun setTargetModel(modelId: String) {
+        if (currentActiveModelId.value != modelId) {
+            currentActiveModelId.value = modelId
+            recomputeAndApplyCurves()
+            Log.i(TAG, "AudioEnhancer: Updated target AirPods model to $modelId")
+        }
+    }
+
+    fun setFrequencyTuningMode(mode: FrequencyTuningMode) {
+        currentTuningMode.value = mode
+        recomputeAndApplyCurves()
+        Log.i(TAG, "AudioEnhancer: Updated frequency tuning mode to ${mode.title}")
     }
 
     /**
@@ -160,13 +186,259 @@ object AudioEnhancer {
      * Dispatches curves across all active audio sessions in real-time.
      */
     @Synchronized
-    private fun recomputeAndApplyCurves() {
+    fun recomputeAndApplyCurves() {
         if (activeSessions.isEmpty()) {
             registerSession(0)
         }
         for (effects in activeSessions.values) {
             applyCurvesToSession(effects)
         }
+    }
+
+    /**
+     * Pure calculation function for frequency response tuning.
+     * Computes optimal gain fraction (-1.0f to +1.0f) for any given center frequency (in Hz),
+     * specifically tailored for each AirPods model architecture.
+     */
+    fun calculateTargetGain(
+        centerFreqHz: Int,
+        modelId: String,
+        tuningMode: FrequencyTuningMode,
+        noiseMode: String,
+        ancIntensity: AncIntensity,
+        antiHiss: Boolean,
+        toneProfile: ToneProfile,
+        toneIntensity: ToneIntensity,
+        spatialMode: SpatialAudioMode
+    ): Float {
+        var gain = 0.0f
+
+        // 1. AirPods Model Acoustic Frequency Profile / Mode Tuning
+        when (tuningMode) {
+            FrequencyTuningMode.STUDIO_FLAT -> {
+                gain = 0.0f
+            }
+            FrequencyTuningMode.AUDIOPHILE_HARMAN -> {
+                // Harman Reference Curve (Tight sub-bass, clean mids, detailed highs)
+                gain += when {
+                    centerFreqHz < 80 -> 0.18f
+                    centerFreqHz in 80..250 -> 0.05f
+                    centerFreqHz in 250..2500 -> 0.08f
+                    centerFreqHz in 2500..8000 -> 0.20f
+                    else -> 0.18f
+                }
+            }
+            FrequencyTuningMode.DEEP_BASS -> {
+                // High-Impact Bass Profile
+                gain += when {
+                    centerFreqHz < 120 -> 0.42f
+                    centerFreqHz in 120..300 -> 0.24f
+                    centerFreqHz in 300..2000 -> 0.05f
+                    else -> 0.12f
+                }
+            }
+            FrequencyTuningMode.VOCAL_CLARITY -> {
+                // Speech & Podcast Clarity Profile
+                gain += when {
+                    centerFreqHz < 200 -> -0.06f
+                    centerFreqHz in 800..3800 -> 0.35f
+                    else -> 0.15f
+                }
+            }
+            FrequencyTuningMode.MODEL_AUTO -> {
+                // Hardware-specific acoustic compensation for each AirPods model
+                when (modelId) {
+                    "airpods_1", "airpods_2" -> {
+                        // Open-fit compensation: low-shelf bass restoration & anti-plastic resonance dip
+                        gain += when {
+                            centerFreqHz < 120 -> 0.38f // +5.7 dB low shelf boost
+                            centerFreqHz in 120..320 -> 0.18f // +2.7 dB warmth
+                            centerFreqHz in 320..2200 -> 0.02f
+                            centerFreqHz in 2200..4500 -> -0.12f // Tames harsh 3.5kHz plastic glare
+                            else -> 0.18f // +2.7 dB airy extension
+                        }
+                    }
+                    "airpods_3" -> {
+                        // Contoured open-fit with bass reflex: punchy dynamic response
+                        gain += when {
+                            centerFreqHz < 100 -> 0.26f // +3.9 dB punch
+                            centerFreqHz in 100..280 -> 0.12f
+                            centerFreqHz in 280..2400 -> 0.04f
+                            centerFreqHz in 2400..4500 -> -0.10f // Smooth vocal sibilance
+                            else -> 0.16f
+                        }
+                    }
+                    "airpods_4", "airpods_4_anc" -> {
+                        // Next-gen semi-open acoustic architecture (H2 chip tuning)
+                        gain += when {
+                            centerFreqHz < 120 -> 0.28f // +4.2 dB low-end reinforcement
+                            centerFreqHz in 120..300 -> 0.14f
+                            centerFreqHz in 300..3000 -> 0.06f
+                            centerFreqHz in 3000..5500 -> -0.06f
+                            else -> 0.18f
+                        }
+                    }
+                    "airpods_pro_1" -> {
+                        // Sealed in-ear: solves upper-treble dip and cleans mid-bass mud
+                        gain += when {
+                            centerFreqHz < 80 -> 0.18f // +2.7 dB sub-bass rumble
+                            centerFreqHz in 150..350 -> -0.06f // Anti-mud tuck
+                            centerFreqHz in 800..3000 -> 0.08f // Vocal intimacy
+                            centerFreqHz in 6000..11000 -> 0.24f // Fixes Pro 1 treble roll-off
+                            else -> 0.16f
+                        }
+                    }
+                    "airpods_pro_2" -> {
+                        // Sealed H2 dual-driver audiophile curve: micro-detail and holographic air
+                        gain += when {
+                            centerFreqHz < 80 -> 0.16f // Tactile 20Hz sub-bass
+                            centerFreqHz in 80..400 -> 0.02f // Flat reference mids
+                            centerFreqHz in 800..2800 -> 0.08f // Natural vocal timbre
+                            centerFreqHz in 5500..9500 -> 0.22f // Restores micro-detail & cymbal shimmer
+                            else -> 0.20f // Ultra-high air & 3D separation
+                        }
+                    }
+                    "airpods_max" -> {
+                        // 40mm Apple dynamic driver over-ear tuning
+                        gain += when {
+                            centerFreqHz < 80 -> 0.14f // Deep planar-like bass
+                            centerFreqHz in 80..2500 -> 0.02f // Reference studio neutral
+                            centerFreqHz in 2500..5500 -> 0.14f // Vocal brilliance
+                            else -> 0.18f // Crystal studio highs
+                        }
+                    }
+                    else -> {
+                        // Universal TWS / Other brands (Balanced Audiophile Curve)
+                        gain += when {
+                            centerFreqHz < 120 -> 0.20f
+                            centerFreqHz in 800..3000 -> 0.08f
+                            else -> 0.15f
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Active Noise Mode Acoustic Curve (Preserving Music Fidelity!)
+        when (noiseMode) {
+            "ANC" -> {
+                val ancMult = when (ancIntensity) {
+                    AncIntensity.ULTRA -> 1.0f
+                    AncIntensity.BALANCED -> 0.75f
+                    AncIntensity.COMFORT -> 0.50f
+                }
+                // Gentle low-frequency seal compensation without cutting vocals!
+                when {
+                    centerFreqHz < 140 -> gain += (0.12f * ancMult)
+                    centerFreqHz > 6000 -> {
+                        if (antiHiss) {
+                            gain -= (0.14f * ancMult) // Filters white noise & DAC hiss
+                        }
+                    }
+                }
+            }
+            "TRANSPARENCY" -> {
+                // Intelligibility boost for human speech while preserving music
+                when {
+                    centerFreqHz in 1000..3800 -> gain += 0.15f
+                    centerFreqHz < 180 -> gain -= 0.06f
+                }
+            }
+        }
+
+        // 3. Apple Headphone Accommodations Component
+        val intensityFactor = when (toneIntensity) {
+            ToneIntensity.SLIGHT -> 0.35f
+            ToneIntensity.MODERATE -> 0.65f
+            ToneIntensity.STRONG -> 0.95f
+        }
+        when (toneProfile) {
+            ToneProfile.BALANCED_TONE -> {
+                when {
+                    centerFreqHz < 250 -> gain += (0.15f * intensityFactor)
+                    centerFreqHz in 250..1200 -> gain += (0.05f * intensityFactor)
+                    centerFreqHz in 1200..3500 -> gain += (0.10f * intensityFactor)
+                    else -> gain += (0.18f * intensityFactor)
+                }
+            }
+            ToneProfile.VOCAL_RANGE -> {
+                when {
+                    centerFreqHz in 800..3800 -> gain += (0.28f * intensityFactor)
+                    centerFreqHz < 250 -> gain += (0.05f * intensityFactor)
+                    else -> gain += (0.08f * intensityFactor)
+                }
+            }
+            ToneProfile.BRIGHTNESS -> {
+                when {
+                    centerFreqHz > 3000 -> gain += (0.30f * intensityFactor)
+                    centerFreqHz in 1000..3000 -> gain += (0.10f * intensityFactor)
+                    else -> gain += (0.04f * intensityFactor)
+                }
+            }
+        }
+
+        // 4. Spatial Audio Acoustic Stage Component
+        when (spatialMode) {
+            SpatialAudioMode.FIXED -> {
+                if (centerFreqHz in 2800..8000) gain += 0.10f
+                if (centerFreqHz < 180) gain += 0.08f
+            }
+            SpatialAudioMode.HEAD_TRACKED -> {
+                if (centerFreqHz in 500..900) gain -= 0.05f
+                if (centerFreqHz > 3000) gain += 0.14f
+                if (centerFreqHz < 200) gain += 0.10f
+            }
+            SpatialAudioMode.OFF -> {}
+        }
+
+        return gain.coerceIn(-1.0f, 1.0f)
+    }
+
+    /**
+     * Calculates optimal hardware BassBoost strength (0-1000) based on model and settings.
+     */
+    fun calculateBassBoost(
+        modelId: String,
+        tuningMode: FrequencyTuningMode,
+        noiseMode: String,
+        ancIntensity: AncIntensity,
+        toneProfile: ToneProfile,
+        toneIntensity: ToneIntensity
+    ): Short {
+        val modelBase = when (tuningMode) {
+            FrequencyTuningMode.DEEP_BASS -> 650
+            FrequencyTuningMode.VOCAL_CLARITY -> 120
+            FrequencyTuningMode.STUDIO_FLAT -> 0
+            FrequencyTuningMode.AUDIOPHILE_HARMAN -> 220
+            FrequencyTuningMode.MODEL_AUTO -> when (modelId) {
+                "airpods_1", "airpods_2" -> 460 // High boost for open fit
+                "airpods_3" -> 350
+                "airpods_4", "airpods_4_anc" -> 360
+                "airpods_pro_1" -> 240
+                "airpods_pro_2" -> 200 // Tight, controlled
+                "airpods_max" -> 160 // Large driver needs minimal artificial boost
+                else -> 280
+            }
+        }
+
+        val noiseExtra = when (noiseMode) {
+            "ANC" -> when (ancIntensity) {
+                AncIntensity.ULTRA -> 150
+                AncIntensity.BALANCED -> 100
+                AncIntensity.COMFORT -> 50
+            }
+            "TRANSPARENCY" -> 0
+            else -> 60
+        }
+
+        val intensityFactor = when (toneIntensity) {
+            ToneIntensity.SLIGHT -> 0.35f
+            ToneIntensity.MODERATE -> 0.65f
+            ToneIntensity.STRONG -> 0.95f
+        }
+        val toneExtra = if (toneProfile == ToneProfile.BALANCED_TONE) (120 * intensityFactor).toInt() else 30
+
+        return (modelBase + noiseExtra + toneExtra).coerceIn(0, 1000).toShort()
     }
 
     private fun applyCurvesToSession(effects: SessionAudioEffects) {
@@ -178,86 +450,19 @@ object AudioEnhancer {
                 val minEQ = eq.bandLevelRange[0].toFloat() // typically -1500 mB (-15dB)
                 val maxEQ = eq.bandLevelRange[1].toFloat() // typically +1500 mB (+15dB)
 
-                val intensityFactor = when (currentToneIntensity.value) {
-                    ToneIntensity.SLIGHT -> 0.40f
-                    ToneIntensity.MODERATE -> 0.70f
-                    ToneIntensity.STRONG -> 1.00f
-                }
-
                 for (i in 0 until numBands) {
                     val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000 // in Hz
-                    var combinedGainFraction = 0.0f
-
-                    // --- Noise Mode Component ---
-                    when (activeNoiseMode) {
-                        "ANC" -> {
-                            val ancMult = when (currentAncIntensity.value) {
-                                AncIntensity.ULTRA -> 1.0f
-                                AncIntensity.BALANCED -> 0.72f
-                                AncIntensity.COMFORT -> 0.45f
-                            }
-                            when {
-                                centerFreqHz < 160 -> combinedGainFraction += (0.75f * ancMult)
-                                centerFreqHz in 160..380 -> combinedGainFraction += (0.35f * ancMult)
-                                centerFreqHz in 450..3400 -> combinedGainFraction -= (0.72f * ancMult)
-                                centerFreqHz > 5500 -> {
-                                    if (antiHissWindReduction.value) {
-                                        combinedGainFraction -= (0.28f * ancMult)
-                                    } else {
-                                        combinedGainFraction += 0.05f
-                                    }
-                                }
-                                else -> combinedGainFraction -= (0.15f * ancMult)
-                            }
-                        }
-                        "TRANSPARENCY" -> {
-                            when {
-                                centerFreqHz in 800..4200 -> combinedGainFraction += 0.70f
-                                centerFreqHz < 250 -> combinedGainFraction -= 0.25f
-                                else -> combinedGainFraction += 0.20f
-                            }
-                        }
-                    }
-
-                    // --- Apple Headphone Accommodations Component ---
-                    when (currentToneProfile.value) {
-                        ToneProfile.BALANCED_TONE -> {
-                            when {
-                                centerFreqHz < 250 -> combinedGainFraction += (0.50f * intensityFactor)
-                                centerFreqHz in 250..1200 -> combinedGainFraction += (0.15f * intensityFactor)
-                                centerFreqHz in 1200..3500 -> combinedGainFraction += (0.30f * intensityFactor)
-                                else -> combinedGainFraction += (0.60f * intensityFactor)
-                            }
-                        }
-                        ToneProfile.VOCAL_RANGE -> {
-                            when {
-                                centerFreqHz < 250 -> combinedGainFraction += (0.20f * intensityFactor)
-                                centerFreqHz in 800..3800 -> combinedGainFraction += (0.80f * intensityFactor)
-                                else -> combinedGainFraction += (0.25f * intensityFactor)
-                            }
-                        }
-                        ToneProfile.BRIGHTNESS -> {
-                            when {
-                                centerFreqHz < 300 -> combinedGainFraction += (0.20f * intensityFactor)
-                                centerFreqHz in 300..2500 -> combinedGainFraction += (0.15f * intensityFactor)
-                                else -> combinedGainFraction += (0.85f * intensityFactor)
-                            }
-                        }
-                    }
-
-                    // --- Spatial Audio Acoustic Stage Component ---
-                    when (currentSpatialMode.value) {
-                        SpatialAudioMode.FIXED -> {
-                            if (centerFreqHz in 2800..8000) combinedGainFraction += 0.25f
-                            if (centerFreqHz < 180) combinedGainFraction += 0.20f
-                        }
-                        SpatialAudioMode.HEAD_TRACKED -> {
-                            if (centerFreqHz in 500..900) combinedGainFraction -= 0.12f
-                            if (centerFreqHz > 3000) combinedGainFraction += 0.35f
-                            if (centerFreqHz < 200) combinedGainFraction += 0.30f
-                        }
-                        SpatialAudioMode.OFF -> {}
-                    }
+                    val combinedGainFraction = calculateTargetGain(
+                        centerFreqHz = centerFreqHz,
+                        modelId = currentActiveModelId.value,
+                        tuningMode = currentTuningMode.value,
+                        noiseMode = activeNoiseMode,
+                        ancIntensity = currentAncIntensity.value,
+                        antiHiss = antiHissWindReduction.value,
+                        toneProfile = currentToneProfile.value,
+                        toneIntensity = currentToneIntensity.value,
+                        spatialMode = currentSpatialMode.value
+                    )
 
                     val targetGainMb = (maxEQ * combinedGainFraction).toInt()
                         .coerceIn(minEQ.toInt(), maxEQ.toInt())
@@ -274,25 +479,15 @@ object AudioEnhancer {
         effects.bassBoost?.let { bb ->
             try {
                 bb.enabled = true
-                val intensityFactor = when (currentToneIntensity.value) {
-                    ToneIntensity.SLIGHT -> 0.40f
-                    ToneIntensity.MODERATE -> 0.70f
-                    ToneIntensity.STRONG -> 1.00f
-                }
-                val baseBoost = when (activeNoiseMode) {
-                    "ANC" -> when (currentAncIntensity.value) {
-                        AncIntensity.ULTRA -> 850
-                        AncIntensity.BALANCED -> 650
-                        AncIntensity.COMFORT -> 380
-                    }
-                    "TRANSPARENCY" -> 100
-                    else -> 400
-                }
-                val accomBoost = when (currentToneProfile.value) {
-                    ToneProfile.BALANCED_TONE -> (300 * intensityFactor).toInt()
-                    else -> 100
-                }
-                bb.setStrength((baseBoost + accomBoost).coerceIn(0, 1000).toShort())
+                val strength = calculateBassBoost(
+                    modelId = currentActiveModelId.value,
+                    tuningMode = currentTuningMode.value,
+                    noiseMode = activeNoiseMode,
+                    ancIntensity = currentAncIntensity.value,
+                    toneProfile = currentToneProfile.value,
+                    toneIntensity = currentToneIntensity.value
+                )
+                bb.setStrength(strength)
             } catch (e: Exception) {
                 Log.w(TAG, "BassBoost apply error on session ${effects.sessionId}: ${e.message}")
             }
@@ -309,7 +504,7 @@ object AudioEnhancer {
                     SpatialAudioMode.OFF -> {
                         if (activeNoiseMode == "ANC") {
                             virt.enabled = true
-                            if (virt.strengthSupported) virt.setStrength(450.toShort())
+                            if (virt.strengthSupported) virt.setStrength(300.toShort())
                         } else {
                             virt.enabled = false
                         }
@@ -317,7 +512,7 @@ object AudioEnhancer {
                     SpatialAudioMode.FIXED -> {
                         virt.enabled = true
                         if (virt.strengthSupported) {
-                            virt.setStrength(850.toShort())
+                            virt.setStrength(800.toShort())
                         }
                     }
                     SpatialAudioMode.HEAD_TRACKED -> {
@@ -390,17 +585,17 @@ object AudioEnhancer {
      * Range: -1.0f (Full Left) to +1.0f (Full Right), 0.0f = Center Balanced
      */
     fun setAudioBalance(context: Context, balance: Float) {
-        currentBalance.value = balance
-        // ponytail: check WRITE_SECURE_SETTINGS explicitly instead of swallowing SecurityException
+        val clamped = balance.coerceIn(-1.0f, 1.0f)
+        currentBalance.value = clamped
         if (checkBalancePermission(context)) {
             try {
-                Settings.Secure.putFloat(context.contentResolver, "master_balance", balance)
-                Log.i(TAG, "Applied Settings.Secure master_balance: $balance")
+                Settings.Secure.putFloat(context.contentResolver, "master_balance", clamped)
+                Log.i(TAG, "Applied Settings.Secure master_balance: $clamped")
             } catch (e: Exception) {
                 Log.w(TAG, "Settings.Secure master_balance failed: ${e.message}")
             }
         } else {
-            Log.i(TAG, "WRITE_SECURE_SETTINGS not granted. Stored balance $balance in-app (requires ADB grant for global audio effect).")
+            Log.i(TAG, "WRITE_SECURE_SETTINGS not granted. Stored balance $clamped in-app (requires ADB grant for global audio effect).")
         }
     }
 
@@ -408,11 +603,11 @@ object AudioEnhancer {
         checkBalancePermission(context)
         try {
             val bal = Settings.Secure.getFloat(context.contentResolver, "master_balance", 0.0f)
-            currentBalance.value = bal
+            currentBalance.value = bal.coerceIn(-1.0f, 1.0f)
         } catch (_: Exception) {
             try {
                 val bal = Settings.System.getFloat(context.contentResolver, "master_balance", 0.0f)
-                currentBalance.value = bal
+                currentBalance.value = bal.coerceIn(-1.0f, 1.0f)
             } catch (_: Exception) {}
         }
     }
@@ -540,5 +735,21 @@ object AudioEnhancer {
 
         Log.d(TAG, "Generated find_my_siren.wav (${file.length()} bytes)")
         return file
+    }
+
+    fun getActiveSessionsCount(): Int = activeSessions.size
+
+    fun getDiagnosticBandInfo(): List<String> {
+        val sampleEq = activeSessions.values.firstOrNull()?.equalizer ?: return emptyList()
+        val bands = mutableListOf<String>()
+        try {
+            val numBands = sampleEq.numberOfBands.toInt()
+            for (i in 0 until numBands) {
+                val freq = sampleEq.getCenterFreq(i.toShort()) / 1000
+                val level = sampleEq.getBandLevel(i.toShort()) / 100f
+                bands.add("${freq}Hz: ${if (level >= 0) "+" else ""}${level}dB")
+            }
+        } catch (_: Exception) {}
+        return bands
     }
 }
