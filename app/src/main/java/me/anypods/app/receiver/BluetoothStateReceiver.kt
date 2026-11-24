@@ -1,8 +1,11 @@
 package me.anypods.app.receiver
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -29,9 +32,8 @@ class BluetoothStateReceiver : BroadcastReceiver() {
 
         when (action) {
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                if (device != null) {
+                if (device != null && BluetoothTracker.isAudioDevice(device)) {
                     BluetoothTracker.onAclConnected(device)
-                    // Trigger AirPods style popup!
                     OverlayPopup.show(context, BluetoothTracker.earbudState.value)
                 }
             }
@@ -41,27 +43,110 @@ class BluetoothStateReceiver : BroadcastReceiver() {
                     OverlayPopup.dismiss()
                 }
             }
+            BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED,
+            BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED -> {
+                val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED)
+                if (state == BluetoothProfile.STATE_CONNECTED) {
+                    if (device != null && BluetoothTracker.isAudioDevice(device)) {
+                        BluetoothTracker.onAclConnected(device)
+                        OverlayPopup.show(context, BluetoothTracker.earbudState.value)
+                    } else {
+                        BluetoothTracker.refreshConnectedDevice()
+                    }
+                } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                    BluetoothTracker.refreshConnectedDevice()
+                }
+            }
             "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" -> {
                 val level = intent.getIntExtra("android.bluetooth.device.extra.BATTERY_LEVEL", -1)
                 if (device != null && level >= 0) {
                     BluetoothTracker.onBatteryChanged(device, level)
                 }
             }
+            BluetoothHeadset.ACTION_VENDOR_SPECIFIC_HEADSET_EVENT -> {
+                handleVendorSpecificEvent(device, intent)
+            }
             BluetoothAdapter.ACTION_STATE_CHANGED -> {
                 BluetoothTracker.refreshConnectedDevice()
             }
         }
 
-        // Ensure service is running
-        val serviceIntent = Intent(context, EarbudService::class.java)
+        // Ensure service is running safely
+        EarbudService.startServiceSafely(context)
+    }
+
+    private fun handleVendorSpecificEvent(device: BluetoothDevice?, intent: Intent) {
+        if (device == null) return
+        val cmd = intent.getStringExtra(BluetoothHeadset.EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_CMD) ?: return
+        val rawArgs = intent.getSerializableExtra(BluetoothHeadset.EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_ARGS) ?: return
+        val args: List<Any?> = when (rawArgs) {
+            is Array<*> -> rawArgs.toList()
+            is Collection<*> -> rawArgs.toList()
+            else -> return
+        }
+
+        if (cmd == "+IPHONEACCEV" && args.isNotEmpty()) {
+            parseIphoneAccev(device, args)
+        }
+    }
+
+    private fun parseIphoneAccev(device: BluetoothDevice, args: List<Any?>) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
+            val result = parseIphoneAccevArgs(args) ?: return
+            val (singleBat, leftBat, rightBat) = result
+
+            if (leftBat in 0..100 && rightBat in 0..100) {
+                BluetoothTracker.onDualBatteryChanged(device, leftBat, rightBat)
+            } else if (singleBat in 0..100) {
+                BluetoothTracker.onBatteryChanged(device, singleBat)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not start EarbudService from receiver: ${e.message}")
+            Log.w(TAG, "Error parsing +IPHONEACCEV: ${e.message}")
+        }
+    }
+
+    companion object {
+        /**
+         * Parses +IPHONEACCEV key-value arguments.
+         * Format: [key_count, key1, val1, key2, val2, ...]
+         * Returns Triple(singleBattery, leftBattery, rightBattery).
+         * Values are 0..100 or -1 if not present.
+         */
+        fun parseIphoneAccevArgs(args: List<Any?>): Triple<Int, Int, Int>? {
+            if (args.isEmpty()) return null
+            val count = (args[0] as? Number)?.toInt() ?: ((args[0] as? String)?.toIntOrNull() ?: return null)
+            var index = 1
+            var leftBat = -1
+            var rightBat = -1
+            var singleBat = -1
+
+            for (i in 0 until count) {
+                if (index + 1 >= args.size) break
+                val key = (args[index] as? Number)?.toInt() ?: (args[index] as? String)?.toIntOrNull()
+                val value = (args[index + 1] as? Number)?.toInt() ?: (args[index + 1] as? String)?.toIntOrNull()
+                index += 2
+
+                if (key != null && value != null) {
+                    when (key) {
+                        1 -> {
+                            // Standard Battery level: 0..9 representing 10% to 100%, or direct percentage
+                            val pct = if (value in 0..9) ((value + 1) * 10) else value.coerceIn(0, 100)
+                            singleBat = pct
+                        }
+                        2 -> {
+                            // Left earbud or docked
+                            val pct = if (value in 0..9) ((value + 1) * 10) else value.coerceIn(0, 100)
+                            leftBat = pct
+                        }
+                        3 -> {
+                            // Right earbud
+                            val pct = if (value in 0..9) ((value + 1) * 10) else value.coerceIn(0, 100)
+                            rightBat = pct
+                        }
+                    }
+                }
+            }
+            return Triple(singleBat, leftBat, rightBat)
         }
     }
 }

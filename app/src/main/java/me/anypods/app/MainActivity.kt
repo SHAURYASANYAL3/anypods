@@ -77,6 +77,7 @@ import me.anypods.app.updater.UpdateManager
 import me.anypods.app.audio.EarTipFitTester
 import me.anypods.app.audio.HearingHealthManager
 import me.anypods.app.audio.FitTestResult
+import me.anypods.app.service.EarbudService
 import me.anypods.app.widget.AnyPodsWidgetProvider
 
 class MainActivity : ComponentActivity() {
@@ -84,6 +85,7 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
+        EarbudService.startServiceSafely(this)
         BluetoothTracker.refreshConnectedDevice()
     }
 
@@ -254,6 +256,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        EarbudService.startServiceSafely(this)
         BluetoothTracker.refreshConnectedDevice()
         HearingHealthManager.updateEstimatedDb(this)
         AnyPodsWidgetProvider.updateAllWidgets(this)

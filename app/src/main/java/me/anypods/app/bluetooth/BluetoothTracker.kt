@@ -51,6 +51,8 @@ object BluetoothTracker {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothA2dp: BluetoothA2dp? = null
     private var bluetoothHeadset: BluetoothHeadset? = null
+    private var bluetoothLeAudio: BluetoothProfile? = null
+    private var bluetoothHearingAid: BluetoothProfile? = null
 
     private var bleScanner: BluetoothLeScanner? = null
     private var bleScanCallback: ScanCallback? = null
@@ -102,6 +104,36 @@ object BluetoothTracker {
                     if (profile == BluetoothProfile.HEADSET) bluetoothHeadset = null
                 }
             }, BluetoothProfile.HEADSET)
+
+            // Bind LE Audio (Profile 22) on Android 12+ (API 31+)
+            try {
+                adapter.getProfileProxy(context.applicationContext, object : BluetoothProfile.ServiceListener {
+                    override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                        bluetoothLeAudio = proxy
+                        Log.d(TAG, "Bluetooth LE Audio proxy connected")
+                        refreshConnectedDevice()
+                    }
+
+                    override fun onServiceDisconnected(profile: Int) {
+                        bluetoothLeAudio = null
+                    }
+                }, 22)
+            } catch (_: Exception) {}
+
+            // Bind Hearing Aid (Profile 21) on Android 10+ (API 29+)
+            try {
+                adapter.getProfileProxy(context.applicationContext, object : BluetoothProfile.ServiceListener {
+                    override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                        bluetoothHearingAid = proxy
+                        Log.d(TAG, "Bluetooth Hearing Aid proxy connected")
+                        refreshConnectedDevice()
+                    }
+
+                    override fun onServiceDisconnected(profile: Int) {
+                        bluetoothHearingAid = null
+                    }
+                }, 21)
+            } catch (_: Exception) {}
         }
 
         refreshConnectedDevice()
@@ -190,6 +222,16 @@ object BluetoothTracker {
         val beacon = AppleBeaconParser.parse(rawData) ?: return
 
         val current = _earbudState.value
+        // If a non-Apple device is currently connected and active, do not let external Apple beacons override it
+        if (current.isConnected &&
+            !current.name.contains("AirPod", ignoreCase = true) &&
+            !current.name.contains("Beats", ignoreCase = true) &&
+            !current.modelId.startsWith("airpods_") &&
+            current.modelId != "beats_studio_buds"
+        ) {
+            return
+        }
+
         val rssi = result.rssi
 
         val effectiveLeft = if (beacon.leftBattery in 0..100) beacon.leftBattery else current.leftBattery
@@ -275,17 +317,33 @@ object BluetoothTracker {
         // 2. Try Headset proxy
         bluetoothHeadset?.connectedDevices?.firstOrNull()?.let { return it }
 
-        // 3. Try AudioManager AudioDeviceInfo (Android 6.0+)
+        // 3. Try LE Audio proxy (Android 12+)
+        try {
+            bluetoothLeAudio?.connectedDevices?.firstOrNull()?.let { return it }
+        } catch (_: Exception) {}
+
+        // 4. Try Hearing Aid proxy (Android 10+)
+        try {
+            bluetoothHearingAid?.connectedDevices?.firstOrNull()?.let { return it }
+        } catch (_: Exception) {}
+
+        // 5. Try AudioManager AudioDeviceInfo (Android 6.0+)
         if (audioManager != null) {
             val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             for (info in devices) {
                 if (info.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                     info.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.type == AudioDeviceInfo.TYPE_BLE_HEADSET) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.type == AudioDeviceInfo.TYPE_BLE_SPEAKER) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.type == AudioDeviceInfo.TYPE_HEARING_AID)
                 ) {
                     val address = info.address
                     if (!address.isNullOrEmpty()) {
                         adapter.bondedDevices?.firstOrNull { it.address.equals(address, ignoreCase = true) }?.let { return it }
+                        try {
+                            val dev = adapter.getRemoteDevice(address)
+                            if (dev != null) return dev
+                        } catch (_: Exception) {}
                     }
                     val pName = info.productName.toString()
                     adapter.bondedDevices?.firstOrNull { it.name.equals(pName, ignoreCase = true) }?.let { return it }
@@ -293,18 +351,50 @@ object BluetoothTracker {
             }
         }
 
-        // 4. Try reflection isConnected on bonded devices
-        return adapter.bondedDevices?.firstOrNull { isDeviceConnected(it) }
+        // 6. Try reflection isConnected on bonded devices - ONLY for audio devices (filters out watches, bands, keyboards)
+        return adapter.bondedDevices?.firstOrNull { isAudioDevice(it) && isDeviceConnected(it) }
+    }
+
+    fun isAudioDevice(device: BluetoothDevice): Boolean {
+        try {
+            val btClass = device.bluetoothClass ?: return true
+            val majorClass = btClass.majorDeviceClass
+            if (majorClass == android.bluetooth.BluetoothClass.Device.Major.AUDIO_VIDEO) {
+                return true
+            }
+            val devClass = btClass.deviceClass
+            val audioClasses = setOf(
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET,
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_HEADPHONES,
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE,
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_LOUDSPEAKER,
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_PORTABLE_AUDIO,
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_CAR_AUDIO,
+                android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_HIFI_AUDIO
+            )
+            if (devClass in audioClasses) return true
+
+            // Ignore smartwatches, wearables, fitness bands, computers, phones, health devices
+            if (majorClass == android.bluetooth.BluetoothClass.Device.Major.WEARABLE ||
+                majorClass == android.bluetooth.BluetoothClass.Device.Major.COMPUTER ||
+                majorClass == android.bluetooth.BluetoothClass.Device.Major.PHONE ||
+                majorClass == android.bluetooth.BluetoothClass.Device.Major.HEALTH
+            ) {
+                return false
+            }
+        } catch (_: Exception) {}
+        return true
     }
 
     private fun updateConnectedDevice(device: BluetoothDevice, hwBattery: Int) {
         val name = device.name ?: "Wireless Earbuds"
         val detectedModel = PodModelManager.detectModel(name)
         val current = _earbudState.value
+        val isDifferentDevice = current.address != device.address || !current.isConnected
 
         val effectiveBattery = if (hwBattery in 0..100) {
             hwBattery
-        } else if (current.leftBattery in 1..100) {
+        } else if (!isDifferentDevice && current.leftBattery in 1..100) {
             current.leftBattery
         } else {
             prefs?.getInt(KEY_LEFT_BATTERY, 85) ?: 85
@@ -312,7 +402,9 @@ object BluetoothTracker {
 
         val caseBat = if (current.caseBattery in 1..100) current.caseBattery else 80
 
-        val modelToUse = if (current.modelId.isNotEmpty() && current.modelId != "airpods_pro_2") {
+        val modelToUse = if (isDifferentDevice) {
+            detectedModel.id
+        } else if (current.modelId.isNotEmpty()) {
             current.modelId
         } else {
             detectedModel.id
@@ -360,13 +452,25 @@ object BluetoothTracker {
     fun onBatteryChanged(device: BluetoothDevice, batteryLevel: Int) {
         if (batteryLevel !in 0..100) return
         val current = _earbudState.value
-        Log.i(TAG, "Auto-detected real battery level: $batteryLevel% for ${device.name}")
-        DiagnosticManager.logEvent("Battery", "Reported battery: $batteryLevel% for ${device.name ?: "Device"}")
+        val name = device.name ?: current.name
+        val isDifferentDevice = current.address != device.address || !current.isConnected
+        val detectedModel = PodModelManager.detectModel(name)
+        val modelToUse = if (isDifferentDevice) {
+            detectedModel.id
+        } else if (current.modelId.isNotEmpty()) {
+            current.modelId
+        } else {
+            detectedModel.id
+        }
+
+        Log.i(TAG, "Auto-detected real battery level: $batteryLevel% for $name")
+        DiagnosticManager.logEvent("Battery", "Reported battery: $batteryLevel% for $name")
 
         _earbudState.value = current.copy(
             address = device.address,
-            name = device.name ?: current.name,
+            name = name,
             isConnected = true,
+            modelId = modelToUse,
             leftBattery = batteryLevel,
             rightBattery = batteryLevel,
             isLeftCharging = false,
@@ -374,7 +478,63 @@ object BluetoothTracker {
         )
 
         prefs?.edit()?.putInt(KEY_LEFT_BATTERY, batteryLevel)?.putInt(KEY_RIGHT_BATTERY, batteryLevel)?.apply()
+        appContext?.let { ctx ->
+            PodModelManager.saveSelectedModel(ctx, modelToUse)
+        }
+        AudioEnhancer.setTargetModel(modelToUse)
         readMetadata(device)
+    }
+
+    /**
+     * Called when HFP (+IPHONEACCEV) or vendor telemetry reports separate Left/Right/Case status.
+     */
+    fun onDualBatteryChanged(
+        device: BluetoothDevice,
+        leftBattery: Int,
+        rightBattery: Int,
+        caseBattery: Int = -1,
+        isLeftCharging: Boolean = false,
+        isRightCharging: Boolean = false,
+        isCaseCharging: Boolean = false
+    ) {
+        val current = _earbudState.value
+        val name = device.name ?: current.name
+        val isDifferentDevice = current.address != device.address || !current.isConnected
+        val detectedModel = PodModelManager.detectModel(name)
+        val modelToUse = if (isDifferentDevice) {
+            detectedModel.id
+        } else if (current.modelId.isNotEmpty()) {
+            current.modelId
+        } else {
+            detectedModel.id
+        }
+
+        val effectiveLeft = if (leftBattery in 0..100) leftBattery else current.leftBattery
+        val effectiveRight = if (rightBattery in 0..100) rightBattery else current.rightBattery
+        val effectiveCase = if (caseBattery in 0..100) caseBattery else current.caseBattery
+
+        _earbudState.value = current.copy(
+            address = device.address,
+            name = name,
+            isConnected = true,
+            modelId = modelToUse,
+            leftBattery = effectiveLeft,
+            rightBattery = effectiveRight,
+            caseBattery = effectiveCase,
+            isLeftCharging = isLeftCharging,
+            isRightCharging = isRightCharging,
+            isCaseCharging = isCaseCharging
+        )
+        prefs?.edit()
+            ?.putInt(KEY_LEFT_BATTERY, effectiveLeft)
+            ?.putInt(KEY_RIGHT_BATTERY, effectiveRight)
+            ?.putInt(KEY_CASE_BATTERY, effectiveCase)
+            ?.apply()
+
+        appContext?.let { ctx ->
+            PodModelManager.saveSelectedModel(ctx, modelToUse)
+        }
+        AudioEnhancer.setTargetModel(modelToUse)
     }
 
     fun setLeftPod(level: Int, isCharging: Boolean) {

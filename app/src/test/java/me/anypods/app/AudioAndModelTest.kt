@@ -66,6 +66,31 @@ class AudioAndModelTest {
         assertEquals("pixel_buds_pro", PodModelManager.detectModel("Pixel Buds Pro").id)
         assertEquals("sony_wf1000xm5", PodModelManager.detectModel("Sony WF-1000XM5").id)
         assertEquals("beats_studio_buds", PodModelManager.detectModel("Beats Studio Buds").id)
+
+        // All popular brands
+        assertEquals("boat_airdopes", PodModelManager.detectModel("boAt Airdopes 141").id)
+        assertEquals("boat_airdopes", PodModelManager.detectModel("boAt Nirvana Ion").id)
+        assertEquals("noise_buds", PodModelManager.detectModel("Noise Buds VS104").id)
+        assertEquals("boult_buds", PodModelManager.detectModel("Boult Audio Airbass Z40").id)
+        assertEquals("jbl_tune", PodModelManager.detectModel("JBL Tune 230NC TWS").id)
+        assertEquals("bose_qc", PodModelManager.detectModel("Bose QuietComfort Earbuds").id)
+        assertEquals("realme_buds", PodModelManager.detectModel("realme Buds Air 5 Pro").id)
+        assertEquals("xiaomi_buds", PodModelManager.detectModel("Redmi Buds 5").id)
+        assertEquals("soundcore_liberty", PodModelManager.detectModel("Soundcore Liberty 4 NC").id)
+        assertEquals("sennheiser_momentum", PodModelManager.detectModel("Sennheiser Momentum True Wireless 4").id)
+        assertEquals("skullcandy_buds", PodModelManager.detectModel("Skullcandy Dime 3").id)
+        assertEquals("marshall_minor", PodModelManager.detectModel("Marshall Minor IV").id)
+        assertEquals("oppo_enco", PodModelManager.detectModel("OPPO Enco Air 3").id)
+        assertEquals("vivo_tws", PodModelManager.detectModel("vivo TWS 3e").id)
+        assertEquals("huawei_freebuds", PodModelManager.detectModel("HUAWEI FreeBuds 5i").id)
+        assertEquals("cmf_buds", PodModelManager.detectModel("CMF Buds Pro").id)
+        assertEquals("nothing_ear_2", PodModelManager.detectModel("Nothing Ear (2)").id)
+
+        // Color & Universal Fallback - Any unrecognized pod is properly mapped to universal TWS
+        assertEquals("tws_white", PodModelManager.detectModel("White Bluetooth Earphones").id)
+        assertEquals("tws_black", PodModelManager.detectModel("Stealth Black Earbuds").id)
+        assertEquals("universal_tws", PodModelManager.detectModel("Custom Chinese TWS Pods").id)
+        assertEquals("universal_tws", PodModelManager.detectModel("Wireless Headset 5.3").id)
     }
 
     @Test
@@ -156,6 +181,33 @@ class AudioAndModelTest {
             spatialMode = SpatialAudioMode.OFF
         )
         assertTrue("AirPods Pro 2 requires micro-detail treble boost (> +0.15f): $pro2TrebleGain", pro2TrebleGain > 0.15f)
+
+        // Verify boAt / Universal TWS energetic bass response
+        val boatBassGain = AudioEnhancer.calculateTargetGain(
+            centerFreqHz = 80,
+            modelId = "boat_airdopes",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            antiHiss = false,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT,
+            spatialMode = SpatialAudioMode.OFF
+        )
+        assertTrue("boAt Airdopes requires energetic bass compensation (> +0.25f): $boatBassGain", boatBassGain > 0.25f)
+
+        val universalGain = AudioEnhancer.calculateTargetGain(
+            centerFreqHz = 1000,
+            modelId = "universal_tws",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            antiHiss = false,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT,
+            spatialMode = SpatialAudioMode.OFF
+        )
+        assertTrue("Universal TWS vocal clarity must be balanced (> 0.05f): $universalGain", universalGain > 0.05f)
     }
 
     @Test
@@ -194,5 +246,111 @@ class AudioAndModelTest {
         assertEquals("AA:BB:CC:**:**:**", me.anypods.app.diagnostics.DiagnosticManager.maskAddress("AA:BB:CC:11:22:33"))
         assertEquals("None", me.anypods.app.diagnostics.DiagnosticManager.maskAddress(""))
         assertEquals("1234****", me.anypods.app.diagnostics.DiagnosticManager.maskAddress("12345678"))
+    }
+
+    @Test
+    fun testVendorSpecificIphoneAccevParsing() {
+        // Test standard single battery AT+IPHONEACCEV format: [1 (count), 1 (key=battery), 8 (val=90%)]
+        val singleArgs = listOf<Any?>(1, 1, 8)
+        val singleResult = me.anypods.app.receiver.BluetoothStateReceiver.parseIphoneAccevArgs(singleArgs)
+        assertNotNull(singleResult)
+        assertEquals(90, singleResult?.first)
+        assertEquals(-1, singleResult?.second)
+        assertEquals(-1, singleResult?.third)
+
+        // Test single battery with 0 representing 10%
+        val minArgs = listOf<Any?>(1, 1, 0)
+        val minResult = me.anypods.app.receiver.BluetoothStateReceiver.parseIphoneAccevArgs(minArgs)
+        assertNotNull(minResult)
+        assertEquals(10, minResult?.first)
+
+        // Test single battery with direct percentage format (e.g. 75%)
+        val pctArgs = listOf<Any?>(1, 1, 75)
+        val pctResult = me.anypods.app.receiver.BluetoothStateReceiver.parseIphoneAccevArgs(pctArgs)
+        assertNotNull(pctResult)
+        assertEquals(75, pctResult?.first)
+
+        // Test dual battery reporting: [2 (count), 2 (left), 7 (80%), 3 (right), 9 (100%)]
+        val dualArgs = listOf<Any?>(2, 2, 7, 3, 9)
+        val dualResult = me.anypods.app.receiver.BluetoothStateReceiver.parseIphoneAccevArgs(dualArgs)
+        assertNotNull(dualResult)
+        assertEquals(-1, dualResult?.first)
+        assertEquals(80, dualResult?.second)
+        assertEquals(100, dualResult?.third)
+
+        // Test string representation in args
+        val strArgs = listOf<Any?>("1", "1", "9")
+        val strResult = me.anypods.app.receiver.BluetoothStateReceiver.parseIphoneAccevArgs(strArgs)
+        assertNotNull(strResult)
+        assertEquals(100, strResult?.first)
+
+        // Test empty & malformed args
+        val emptyResult = me.anypods.app.receiver.BluetoothStateReceiver.parseIphoneAccevArgs(emptyList())
+        assertEquals(null, emptyResult)
+    }
+
+    @Test
+    fun testModelStickinessAndBrandPriority() {
+        // Multi-brand earbuds containing "pods" or "pro 2" must route to their respective brand, not Apple!
+        assertEquals("boat_airdopes", PodModelManager.detectModel("boAt Basspods Pro 2").id)
+        assertEquals("boult_buds", PodModelManager.detectModel("Boult Pods Pro 2").id)
+        assertEquals("noise_buds", PodModelManager.detectModel("Noise Shots Pro").id)
+        assertEquals("galaxy_buds_pro_2", PodModelManager.detectModel("Galaxy Buds 2 Pro").id)
+        assertEquals("galaxy_buds_3_pro", PodModelManager.detectModel("Galaxy Buds3 Pro").id)
+        assertEquals("pixel_buds_pro", PodModelManager.detectModel("Google Pixel Buds Pro 2").id)
+        assertEquals("oneplus_buds_pro_2", PodModelManager.detectModel("OnePlus Buds Pro 2").id)
+        assertEquals("sony_wf1000xm5", PodModelManager.detectModel("Sony WH-1000XM4").id)
+
+        // Ensure Apple AirPods Pro 2 detection remains accurate
+        assertEquals("airpods_pro_2", PodModelManager.detectModel("Shaurya's AirPods Pro 2").id)
+        assertEquals("airpods_pro_2", PodModelManager.detectModel("AirPods Pro (2nd generation)").id)
+    }
+
+    @Test
+    fun testEarbudStateOverallBatteryCalculations() {
+        val dualState = me.anypods.app.model.EarbudState(leftBattery = 80, rightBattery = 100)
+        assertEquals(90, dualState.overallBattery)
+
+        val leftOnlyState = me.anypods.app.model.EarbudState(leftBattery = 70, rightBattery = -1)
+        assertEquals(70, leftOnlyState.overallBattery)
+
+        val rightOnlyState = me.anypods.app.model.EarbudState(leftBattery = -1, rightBattery = 60)
+        assertEquals(60, rightOnlyState.overallBattery)
+
+        val disconnectedState = me.anypods.app.model.EarbudState(leftBattery = -1, rightBattery = -1)
+        assertEquals(-1, disconnectedState.overallBattery)
+    }
+
+    @Test
+    fun testBrandSpecificBassBoostCalculations() {
+        val boatBassBoost = AudioEnhancer.calculateBassBoost(
+            modelId = "boat_airdopes",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT
+        )
+        assertTrue("boAt Airdopes energetic bass boost should be high: $boatBassBoost", boatBassBoost >= 300)
+
+        val sonyBassBoost = AudioEnhancer.calculateBassBoost(
+            modelId = "sony_wf1000xm5",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT
+        )
+        assertTrue("Sony WF-1000XM5 should have calibrated bass boost: $sonyBassBoost", sonyBassBoost in 200..300)
+
+        val universalBassBoost = AudioEnhancer.calculateBassBoost(
+            modelId = "universal_tws",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT
+        )
+        assertTrue("Universal TWS fallback bass boost should be standard: $universalBassBoost", universalBassBoost in 250..350)
     }
 }

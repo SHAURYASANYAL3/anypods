@@ -307,12 +307,59 @@ object AudioEnhancer {
                             else -> 0.18f // Crystal studio highs
                         }
                     }
-                    else -> {
-                        // Universal TWS / Other brands (Balanced Audiophile Curve)
+                    "galaxy_buds_3_pro", "galaxy_buds_pro_2" -> {
+                        // Samsung Galaxy Buds (Dual-way speaker system, AKG/Harman soundstage)
                         gain += when {
-                            centerFreqHz < 120 -> 0.20f
+                            centerFreqHz < 100 -> 0.22f
+                            centerFreqHz in 100..400 -> 0.06f
+                            centerFreqHz in 800..3000 -> 0.10f
+                            centerFreqHz in 5000..9000 -> 0.18f
+                            else -> 0.16f
+                        }
+                    }
+                    "sony_wf1000xm5" -> {
+                        // Sony Dynamic Driver X tuning (Tamed mid-bass warmth & expanded LDAC treble)
+                        gain += when {
+                            centerFreqHz < 100 -> 0.24f
+                            centerFreqHz in 100..350 -> 0.04f
                             centerFreqHz in 800..3000 -> 0.08f
+                            centerFreqHz in 5000..10000 -> 0.20f
+                            else -> 0.18f
+                        }
+                    }
+                    "pixel_buds_pro", "pixel_buds_a" -> {
+                        // Google Pixel Buds neutral vocal-forward profile
+                        gain += when {
+                            centerFreqHz < 100 -> 0.20f
+                            centerFreqHz in 100..400 -> 0.05f
+                            centerFreqHz in 800..3500 -> 0.14f
                             else -> 0.15f
+                        }
+                    }
+                    "boat_airdopes", "noise_buds", "boult_buds" -> {
+                        // boAt / Noise / Boult energetic bass & speech clarity tuning
+                        gain += when {
+                            centerFreqHz < 120 -> 0.28f
+                            centerFreqHz in 120..350 -> 0.12f
+                            centerFreqHz in 800..3200 -> 0.12f
+                            else -> 0.15f
+                        }
+                    }
+                    "jbl_tune", "bose_qc", "sennheiser_momentum", "soundcore_liberty" -> {
+                        // Premium audio brand acoustic compensation
+                        gain += when {
+                            centerFreqHz < 100 -> 0.20f
+                            centerFreqHz in 800..2800 -> 0.10f
+                            else -> 0.16f
+                        }
+                    }
+                    else -> {
+                        // Universal TWS / Any pod connected (Balanced Audiophile Target)
+                        gain += when {
+                            centerFreqHz < 120 -> 0.22f
+                            centerFreqHz in 120..400 -> 0.06f
+                            centerFreqHz in 800..3000 -> 0.10f
+                            else -> 0.16f
                         }
                     }
                 }
@@ -417,6 +464,10 @@ object AudioEnhancer {
                 "airpods_pro_1" -> 240
                 "airpods_pro_2" -> 200 // Tight, controlled
                 "airpods_max" -> 160 // Large driver needs minimal artificial boost
+                "galaxy_buds_3_pro", "galaxy_buds_pro_2" -> 220
+                "sony_wf1000xm5" -> 250
+                "boat_airdopes", "noise_buds", "boult_buds" -> 320
+                "jbl_tune", "bose_qc", "soundcore_liberty" -> 240
                 else -> 280
             }
         }

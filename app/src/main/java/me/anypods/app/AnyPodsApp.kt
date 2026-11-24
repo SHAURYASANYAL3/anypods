@@ -13,12 +13,7 @@ class AnyPodsApp : Application() {
         DiagnosticManager.init(this)
         BluetoothTracker.init(this)
         
-        // Start monitoring service
-        val intent = Intent(this, EarbudService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        // Start monitoring service safely if permissions are already present
+        EarbudService.startServiceSafely(this)
     }
 }
