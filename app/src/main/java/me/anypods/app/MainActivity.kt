@@ -64,10 +64,14 @@ import me.anypods.app.ui.AudioBalanceCard
 import me.anypods.app.ui.SpatialAudioCard
 import me.anypods.app.ui.HeadphoneAccommodationsCard
 import me.anypods.app.ui.AirPodsFrequencyTuningCard
+import me.anypods.app.ui.DiagnosticSettingsCard
+import me.anypods.app.ui.DiagnosticConsentDialog
+import me.anypods.app.ui.DiagnosticReportDialog
 import me.anypods.app.ui.SoftwareUpdateDialog
 import me.anypods.app.ui.WebImageSearchDialog
 import me.anypods.app.ui.BalancePermissionDialog
 import me.anypods.app.ui.theme.AnyPodsTheme
+import me.anypods.app.diagnostics.DiagnosticManager
 import me.anypods.app.updater.UpdateInfo
 import me.anypods.app.updater.UpdateManager
 import me.anypods.app.audio.EarTipFitTester
@@ -337,6 +341,17 @@ fun AnyPodsScreen(
     val hasBalancePermission by AudioEnhancer.hasBalancePermission.collectAsState()
     var showWebSearchDialog by remember { mutableStateOf(false) }
     var showBalanceDialog by remember { mutableStateOf(false) }
+
+    val isDiagnosticConsentGranted by DiagnosticManager.consentGranted.collectAsState()
+    var showReportDialog by remember { mutableStateOf(false) }
+    var showConsentDialog by remember { mutableStateOf(false) }
+    var reportPreviewText by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        if (DiagnosticManager.shouldShowConsentPrompt(context)) {
+            showConsentDialog = true
+        }
+    }
 
     val customBitmap = remember(state.name, imageVersion) {
         PodImageManager.getDeviceBitmap(context, state.name)
@@ -1306,6 +1321,25 @@ fun AnyPodsScreen(
                 }
             }
 
+            // Diagnostics & Telemetry Card
+            DiagnosticSettingsCard(
+                isConsentGranted = isDiagnosticConsentGranted,
+                onToggleConsent = { granted ->
+                    DiagnosticManager.setConsentGranted(context, granted)
+                },
+                onViewReport = {
+                    reportPreviewText = DiagnosticManager.buildDiagnosticReport(context, state)
+                    showReportDialog = true
+                },
+                onShareReport = {
+                    if (!isDiagnosticConsentGranted) {
+                        showConsentDialog = true
+                    } else {
+                        DiagnosticManager.shareReport(context, state)
+                    }
+                }
+            )
+
             // Software Update Card
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -1417,6 +1451,28 @@ fun AnyPodsScreen(
         BalancePermissionDialog(
             show = showBalanceDialog,
             onDismiss = { showBalanceDialog = false }
+        )
+
+        // Diagnostic Sharing Consent Dialog
+        DiagnosticConsentDialog(
+            show = showConsentDialog,
+            onConfirm = { granted ->
+                DiagnosticManager.setConsentGranted(context, granted)
+                showConsentDialog = false
+                if (granted) {
+                    Toast.makeText(context, "Diagnostic sharing enabled. Thank you for supporting AnyPods!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+
+        // Diagnostic Report Preview & Share Dialog
+        DiagnosticReportDialog(
+            show = showReportDialog,
+            reportText = reportPreviewText,
+            onShare = {
+                DiagnosticManager.shareReport(context, state)
+            },
+            onDismiss = { showReportDialog = false }
         )
     }
 }

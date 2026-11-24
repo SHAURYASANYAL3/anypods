@@ -736,4 +736,20 @@ object AudioEnhancer {
         Log.d(TAG, "Generated find_my_siren.wav (${file.length()} bytes)")
         return file
     }
+
+    fun getActiveSessionsCount(): Int = activeSessions.size
+
+    fun getDiagnosticBandInfo(): List<String> {
+        val sampleEq = activeSessions.values.firstOrNull()?.equalizer ?: return emptyList()
+        val bands = mutableListOf<String>()
+        try {
+            val numBands = sampleEq.numberOfBands.toInt()
+            for (i in 0 until numBands) {
+                val freq = sampleEq.getCenterFreq(i.toShort()) / 1000
+                val level = sampleEq.getBandLevel(i.toShort()) / 100f
+                bands.add("${freq}Hz: ${if (level >= 0) "+" else ""}${level}dB")
+            }
+        } catch (_: Exception) {}
+        return bands
+    }
 }

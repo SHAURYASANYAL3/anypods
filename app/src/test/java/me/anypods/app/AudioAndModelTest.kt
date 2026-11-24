@@ -188,4 +188,11 @@ class AudioAndModelTest {
         assertEquals(1.0f, clampedTest(1.8f), 0.001f)
         assertEquals(0.0f, clampedTest(0.0f), 0.001f)
     }
+
+    @Test
+    fun testDiagnosticManagerAddressMasking() {
+        assertEquals("AA:BB:CC:**:**:**", me.anypods.app.diagnostics.DiagnosticManager.maskAddress("AA:BB:CC:11:22:33"))
+        assertEquals("None", me.anypods.app.diagnostics.DiagnosticManager.maskAddress(""))
+        assertEquals("1234****", me.anypods.app.diagnostics.DiagnosticManager.maskAddress("12345678"))
+    }
 }

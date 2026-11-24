@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import me.anypods.app.audio.AudioEnhancer
+import me.anypods.app.diagnostics.DiagnosticManager
 import me.anypods.app.model.EarbudState
 import me.anypods.app.model.PodImageManager
 import me.anypods.app.model.PodModelManager
@@ -222,6 +223,7 @@ object BluetoothTracker {
             PodModelManager.saveSelectedModel(ctx, beacon.modelId)
         }
         AudioEnhancer.setTargetModel(beacon.modelId)
+        DiagnosticManager.logEvent("AppleBeacon", "model=${beacon.modelId}, L=${effectiveLeft}%⚡${beacon.isLeftCharging}, R=${effectiveRight}%⚡${beacon.isRightCharging}, Case=${effectiveCase}%⚡${beacon.isCaseCharging}, inEar(L=${beacon.isLeftInEar}, R=${beacon.isRightInEar})")
 
         // Trigger AirPods popup card when case lid is opened nearby
         val now = System.currentTimeMillis()
@@ -334,6 +336,7 @@ object BluetoothTracker {
             PodImageManager.autoFetchIfMissing(ctx, name)
         }
         AudioEnhancer.setTargetModel(modelToUse)
+        DiagnosticManager.logEvent("Bluetooth", "Connected: $name [${DiagnosticManager.maskAddress(device.address)}], model=$modelToUse, battery=$effectiveBattery%")
     }
 
     fun onAclConnected(device: BluetoothDevice) {
@@ -347,6 +350,7 @@ object BluetoothTracker {
     fun onAclDisconnected(device: BluetoothDevice) {
         if (_earbudState.value.address == device.address) {
             _earbudState.value = _earbudState.value.copy(isConnected = false)
+            DiagnosticManager.logEvent("Bluetooth", "Disconnected: ${device.name ?: "Unknown"}")
         }
     }
 
@@ -357,6 +361,7 @@ object BluetoothTracker {
         if (batteryLevel !in 0..100) return
         val current = _earbudState.value
         Log.i(TAG, "Auto-detected real battery level: $batteryLevel% for ${device.name}")
+        DiagnosticManager.logEvent("Battery", "Reported battery: $batteryLevel% for ${device.name ?: "Device"}")
 
         _earbudState.value = current.copy(
             address = device.address,
