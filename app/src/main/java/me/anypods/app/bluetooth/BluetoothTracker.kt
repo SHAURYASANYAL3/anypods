@@ -10,17 +10,28 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.BluetoothLeScanner
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.anypods.app.audio.AudioEnhancer
 import me.anypods.app.model.EarbudState
+import me.anypods.app.model.PodImageManager
+import me.anypods.app.model.PodModelManager
+import me.anypods.app.ui.OverlayPopup
 import java.util.UUID
 
 @SuppressLint("MissingPermission")
@@ -39,6 +50,11 @@ object BluetoothTracker {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothA2dp: BluetoothA2dp? = null
     private var bluetoothHeadset: BluetoothHeadset? = null
+
+    private var bleScanner: BluetoothLeScanner? = null
+    private var bleScanCallback: ScanCallback? = null
+    private var isBleScanning = false
+    private var lastPopupTime = 0L
 
     private var batteryPollingJob: Job? = null
 
@@ -89,6 +105,7 @@ object BluetoothTracker {
 
         refreshConnectedDevice()
         startPeriodicBatteryPolling()
+        startAppleBeaconScanning()
     }
 
     private fun startPeriodicBatteryPolling() {
@@ -103,13 +120,129 @@ object BluetoothTracker {
         }
     }
 
+    fun startAppleBeaconScanning() {
+        val ctx = appContext ?: return
+        val adapter = bluetoothAdapter ?: return
+        if (!adapter.isEnabled || isBleScanning) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "BLUETOOTH_SCAN permission not granted; skipping BLE beacon scanner")
+                return
+            }
+        }
+
+        try {
+            bleScanner = adapter.bluetoothLeScanner
+            if (bleScanner == null) return
+
+            // Scan for Apple manufacturer data (ID 76 = 0x004C) with proximity prefix 0x07, 0x19
+            val scanFilter = ScanFilter.Builder()
+                .setManufacturerData(
+                    AppleBeaconParser.APPLE_MANUFACTURER_ID,
+                    byteArrayOf(7, 25),
+                    byteArrayOf(-1, -1)
+                )
+                .build()
+
+            val scanSettings = ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build()
+
+            bleScanCallback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult?) {
+                    result?.let { handleScanResult(it) }
+                }
+
+                override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+                    results?.forEach { handleScanResult(it) }
+                }
+
+                override fun onScanFailed(errorCode: Int) {
+                    Log.w(TAG, "Apple BLE scan failed with error code $errorCode")
+                    isBleScanning = false
+                }
+            }
+
+            bleScanner?.startScan(listOf(scanFilter), scanSettings, bleScanCallback)
+            isBleScanning = true
+            Log.i(TAG, "Apple AirPods BLE Beacon scanner started successfully")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to start Apple BLE Beacon scanner: ${e.message}")
+        }
+    }
+
+    fun stopAppleBeaconScanning() {
+        if (!isBleScanning) return
+        try {
+            bleScanCallback?.let { bleScanner?.stopScan(it) }
+        } catch (_: Exception) {}
+        bleScanCallback = null
+        bleScanner = null
+        isBleScanning = false
+        Log.i(TAG, "Apple AirPods BLE Beacon scanner stopped")
+    }
+
+    private fun handleScanResult(result: ScanResult) {
+        val scanRecord = result.scanRecord ?: return
+        val rawData = scanRecord.getManufacturerSpecificData(AppleBeaconParser.APPLE_MANUFACTURER_ID) ?: return
+        val beacon = AppleBeaconParser.parse(rawData) ?: return
+
+        val current = _earbudState.value
+        val rssi = result.rssi
+
+        val effectiveLeft = if (beacon.leftBattery in 0..100) beacon.leftBattery else current.leftBattery
+        val effectiveRight = if (beacon.rightBattery in 0..100) beacon.rightBattery else current.rightBattery
+        val effectiveCase = if (beacon.caseBattery in 0..100) beacon.caseBattery else current.caseBattery
+
+        val wasCharging = current.isLeftCharging || current.isRightCharging || current.isCaseCharging
+        val isNowCharging = beacon.isLeftCharging || beacon.isRightCharging || beacon.isCaseCharging
+
+        val updatedState = current.copy(
+            modelId = beacon.modelId,
+            leftBattery = effectiveLeft,
+            rightBattery = effectiveRight,
+            caseBattery = effectiveCase,
+            isLeftCharging = beacon.isLeftCharging,
+            isRightCharging = beacon.isRightCharging,
+            isCaseCharging = beacon.isCaseCharging,
+            isLeftInEar = beacon.isLeftInEar,
+            isRightInEar = beacon.isRightInEar
+        )
+        _earbudState.value = updatedState
+
+        prefs?.edit()
+            ?.putInt(KEY_LEFT_BATTERY, effectiveLeft)
+            ?.putInt(KEY_RIGHT_BATTERY, effectiveRight)
+            ?.putInt(KEY_CASE_BATTERY, effectiveCase)
+            ?.apply()
+
+        // Sync active model with PodModelManager and AudioEnhancer
+        appContext?.let { ctx ->
+            PodModelManager.saveSelectedModel(ctx, beacon.modelId)
+        }
+        AudioEnhancer.setTargetModel(beacon.modelId)
+
+        // Trigger AirPods popup card when case lid is opened nearby
+        val now = System.currentTimeMillis()
+        if (rssi > -72 && (beacon.caseBattery > 0 || isNowCharging != wasCharging) && (now - lastPopupTime > 12000L)) {
+            lastPopupTime = now
+            appContext?.let { ctx ->
+                OverlayPopup.show(ctx, updatedState)
+            }
+        }
+    }
+
     fun refreshConnectedDevice() {
         val ctx = appContext ?: return
         val adapter = bluetoothAdapter ?: return
         if (!adapter.isEnabled) {
             _earbudState.value = _earbudState.value.copy(isConnected = false)
+            stopAppleBeaconScanning()
             return
         }
+
+        startAppleBeaconScanning()
 
         try {
             val audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -121,10 +254,11 @@ object BluetoothTracker {
                 readMetadata(connectedDevice)
                 readGattBattery(connectedDevice)
             } else {
-                val bonded = adapter.bondedDevices ?: emptySet()
-                if (bonded.isNotEmpty()) {
-                    val first = bonded.first()
-                    updateConnectedDevice(first, readBatteryLevel(first))
+                // No Bluetooth audio gear currently connected. Keep state clean without false positive.
+                val current = _earbudState.value
+                if (current.isConnected) {
+                    _earbudState.value = current.copy(isConnected = false)
+                    Log.d(TAG, "No Bluetooth audio device connected. Updated isConnected=false")
                 }
             }
         } catch (e: Exception) {
@@ -163,9 +297,9 @@ object BluetoothTracker {
 
     private fun updateConnectedDevice(device: BluetoothDevice, hwBattery: Int) {
         val name = device.name ?: "Wireless Earbuds"
+        val detectedModel = PodModelManager.detectModel(name)
         val current = _earbudState.value
 
-        // Automatically set pods battery from hardware report if available
         val effectiveBattery = if (hwBattery in 0..100) {
             hwBattery
         } else if (current.leftBattery in 1..100) {
@@ -176,23 +310,30 @@ object BluetoothTracker {
 
         val caseBat = if (current.caseBattery in 1..100) current.caseBattery else 80
 
-        // When earbuds are connected and in active use, they are in the user's ears (discharging)
+        val modelToUse = if (current.modelId.isNotEmpty() && current.modelId != "airpods_pro_2") {
+            current.modelId
+        } else {
+            detectedModel.id
+        }
+
         _earbudState.value = current.copy(
             name = name,
             address = device.address,
             isConnected = true,
+            modelId = modelToUse,
             leftBattery = effectiveBattery,
             rightBattery = effectiveBattery,
             caseBattery = caseBat,
-            isLeftCharging = false,
-            isRightCharging = false,
+            isLeftCharging = current.isLeftCharging,
+            isRightCharging = current.isRightCharging,
             isCaseCharging = current.isCaseCharging
         )
 
-        // Automatically fetch and cache real product photo from the internet
         appContext?.let { ctx ->
-            me.anypods.app.model.PodImageManager.autoFetchIfMissing(ctx, name)
+            PodModelManager.saveSelectedModel(ctx, modelToUse)
+            PodImageManager.autoFetchIfMissing(ctx, name)
         }
+        AudioEnhancer.setTargetModel(modelToUse)
     }
 
     fun onAclConnected(device: BluetoothDevice) {
@@ -200,6 +341,7 @@ object BluetoothTracker {
         updateConnectedDevice(device, hwBattery)
         readMetadata(device)
         readGattBattery(device)
+        startAppleBeaconScanning()
     }
 
     fun onAclDisconnected(device: BluetoothDevice) {
@@ -339,7 +481,7 @@ object BluetoothTracker {
                 }
             }
 
-            // ponytail: 5-second timeout ensures GATT client connection slots (max 32) are never leaked
+            // 5-second timeout ensures GATT client connection slots (max 32) are never leaked
             val timeoutJob = scope.launch(Dispatchers.Default) {
                 delay(5000)
                 safeClose()

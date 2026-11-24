@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.anypods.app.anc.NoiseMode
 import me.anypods.app.audio.AncIntensity
+import me.anypods.app.audio.FrequencyTuningMode
 import me.anypods.app.audio.SpatialAudioMode
 import me.anypods.app.audio.ToneIntensity
 import me.anypods.app.audio.ToneProfile
@@ -311,6 +312,108 @@ fun HeadphoneAccommodationsCard(
                             color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp)
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AirPodsFrequencyTuningCard(
+    currentModelName: String,
+    tuningMode: FrequencyTuningMode,
+    onSetTuningMode: (FrequencyTuningMode) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "AirPods Frequency Tuning",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = "⚡ DSP Tuned",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Precision hardware-calibrated frequency curves tuned for $currentModelName and all AirPods variants.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text("Acoustic Frequency Curve:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val modes = listOf(
+                FrequencyTuningMode.MODEL_AUTO to ("Auto: " + currentModelName),
+                FrequencyTuningMode.AUDIOPHILE_HARMAN to "Harman Reference",
+                FrequencyTuningMode.DEEP_BASS to "Deep Bass (+6dB)",
+                FrequencyTuningMode.VOCAL_CLARITY to "Vocal & Podcast",
+                FrequencyTuningMode.STUDIO_FLAT to "Studio Flat"
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                modes.chunked(2).forEach { rowModes ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowModes.forEach { (mode, label) ->
+                            val isSel = tuningMode == mode
+                            Surface(
+                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onSetTuningMode(mode) }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = mode.subtitle,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                        lineHeight = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                        if (rowModes.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }

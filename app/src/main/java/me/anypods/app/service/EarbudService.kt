@@ -8,11 +8,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.media.audiofx.AudioEffect
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +23,7 @@ import me.anypods.app.MainActivity
 import me.anypods.app.R
 import me.anypods.app.bluetooth.BluetoothTracker
 import me.anypods.app.model.EarbudState
+import me.anypods.app.model.PodModelManager
 import me.anypods.app.receiver.AudioEffectReceiver
 
 class EarbudService : Service() {
@@ -94,13 +96,14 @@ class EarbudService : Service() {
             this,
             0,
             Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        val title = if (state.isConnected) state.name else "AnyPods - Ready"
-        val leftStr = if (state.leftBattery >= 0) "${state.leftBattery}%" else "--%"
-        val rightStr = if (state.rightBattery >= 0) "${state.rightBattery}%" else "--%"
-        val caseStr = if (state.caseBattery >= 0) "${state.caseBattery}%" else "--%"
+        val modelInfo = PodModelManager.getModelById(state.modelId)
+        val title = if (state.isConnected) "${state.name} (${modelInfo.name})" else "AnyPods - Ready"
+        val leftStr = if (state.leftBattery >= 0) "${state.leftBattery}%" + (if (state.isLeftCharging) " ⚡" else "") else "--%"
+        val rightStr = if (state.rightBattery >= 0) "${state.rightBattery}%" + (if (state.isRightCharging) " ⚡" else "") else "--%"
+        val caseStr = if (state.caseBattery >= 0) "${state.caseBattery}%" + (if (state.isCaseCharging) " ⚡" else "") else "--%"
 
         val content = if (state.isConnected) {
             "L: $leftStr  |  Case: $caseStr  |  R: $rightStr"
@@ -122,7 +125,16 @@ class EarbudService : Service() {
     private fun startForegroundWithNotification(state: EarbudState) {
         val notification = buildNotification(state)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasBtConnect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.BLUETOOTH_CONNECT
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasBtConnect) {
                 startForeground(
                     NOTIF_ID,
                     notification,
@@ -131,12 +143,10 @@ class EarbudService : Service() {
             } else {
                 startForeground(NOTIF_ID, notification)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             try {
                 startForeground(NOTIF_ID, notification)
-            } catch (e2: Exception) {
-                // Ignore if started in background without permission
-            }
+            } catch (_: Exception) {}
         }
     }
 
