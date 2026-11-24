@@ -706,54 +706,31 @@ object BluetoothTracker {
             Log.d(TAG, "setMetadata listening mode unavailable on this ROM: ${e.message}")
         }
 
-        // 2. Direct Apple Accessory Protocol (AACP) listening mode packet
-        // Opcode 0x0009 (Control), ID 0x0D (ListeningMode), Mode byte, padding
-        val aacpPayload = byteArrayOf(
-            0x04, 0x00, 0x04, 0x00,
-            0x09, 0x00,
-            0x0D,
-            modeVal,
-            0x00, 0x00, 0x00
-        )
-
-        scope.launch(Dispatchers.IO) {
-            // Attempt L2CAP channel PSM 0x1001 (standard Apple Accessory channel)
-            var l2capSocket: android.bluetooth.BluetoothSocket? = null
-            try {
-                l2capSocket = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    dev.createInsecureL2capChannel(0x1001)
-                } else {
-                    val m = dev.javaClass.getMethod("createInsecureL2capSocket", Int::class.javaPrimitiveType)
-                    m.invoke(dev, 0x1001) as? android.bluetooth.BluetoothSocket
+        // 2. Direct RFCOMM fallback if L2CAP is disconnected
+        if (!AirPodsL2capClient.isConnected) {
+            val aacpPayload = byteArrayOf(
+                0x04, 0x00, 0x04, 0x00,
+                0x09, 0x00,
+                0x0D,
+                modeVal,
+                0x00, 0x00, 0x00
+            )
+            scope.launch(Dispatchers.IO) {
+                var rfcommSocket: android.bluetooth.BluetoothSocket? = null
+                try {
+                    val appleUuid = UUID.fromString("74ec2172-0bad-4d01-8f77-997b2be0722a")
+                    rfcommSocket = dev.createInsecureRfcommSocketToServiceRecord(appleUuid)
+                    rfcommSocket?.let { s ->
+                        s.connect()
+                        val out = s.outputStream
+                        out.write(aacpPayload)
+                        out.flush()
+                        Log.d(TAG, "Sent AACP listening mode $modeVal over RFCOMM fallback to ${dev.name}")
+                        s.close()
+                    }
+                } catch (e: Exception) {
+                    try { rfcommSocket?.close() } catch (_: Exception) {}
                 }
-                l2capSocket?.let { s ->
-                    s.connect()
-                    val out = s.outputStream
-                    out.write(aacpPayload)
-                    out.flush()
-                    Log.d(TAG, "Successfully sent AACP listening mode $modeVal over L2CAP to ${dev.name}")
-                    s.close()
-                    return@launch
-                }
-            } catch (e: Exception) {
-                try { l2capSocket?.close() } catch (_: Exception) {}
-            }
-
-            // Fallback: Attempt Apple RFCOMM socket (UUID 74ec2172-0bad-4d01-8f77-997b2be0722a)
-            var rfcommSocket: android.bluetooth.BluetoothSocket? = null
-            try {
-                val appleUuid = UUID.fromString("74ec2172-0bad-4d01-8f77-997b2be0722a")
-                rfcommSocket = dev.createInsecureRfcommSocketToServiceRecord(appleUuid)
-                rfcommSocket?.let { s ->
-                    s.connect()
-                    val out = s.outputStream
-                    out.write(aacpPayload)
-                    out.flush()
-                    Log.d(TAG, "Successfully sent AACP listening mode $modeVal over RFCOMM to ${dev.name}")
-                    s.close()
-                }
-            } catch (e: Exception) {
-                try { rfcommSocket?.close() } catch (_: Exception) {}
             }
         }
     }
