@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -134,18 +135,32 @@ class EarbudService : Service() {
                 true
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasBtConnect) {
-                startForeground(
-                    NOTIF_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (hasBtConnect) {
+                    startForeground(
+                        NOTIF_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                    )
+                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(NOTIF_ID, notification)
+                } else {
+                    // On Android 14+, foreground service with connectedDevice requires BLUETOOTH_CONNECT.
+                    // Stop service safely until user grants permission in UI.
+                    Log.w("AnyPods.EarbudService", "BLUETOOTH_CONNECT permission missing on Android 14+; deferring foreground service")
+                    stopSelf()
+                }
             } else {
                 startForeground(NOTIF_ID, notification)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("AnyPods.EarbudService", "startForeground error: ${e.message}")
             try {
-                startForeground(NOTIF_ID, notification)
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(NOTIF_ID, notification)
+                } else {
+                    stopSelf()
+                }
             } catch (_: Exception) {}
         }
     }
@@ -153,5 +168,30 @@ class EarbudService : Service() {
     private fun updateNotification(state: EarbudState) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIF_ID, buildNotification(state))
+    }
+
+    companion object {
+        fun startServiceSafely(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.BLUETOOTH_CONNECT
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!hasPermission) {
+                    Log.d("AnyPods.EarbudService", "BLUETOOTH_CONNECT not granted yet; waiting for user permission")
+                    return
+                }
+            }
+            val intent = Intent(context, EarbudService::class.java)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.w("AnyPods.EarbudService", "Could not start EarbudService: ${e.message}")
+            }
+        }
     }
 }

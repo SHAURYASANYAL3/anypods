@@ -66,6 +66,31 @@ class AudioAndModelTest {
         assertEquals("pixel_buds_pro", PodModelManager.detectModel("Pixel Buds Pro").id)
         assertEquals("sony_wf1000xm5", PodModelManager.detectModel("Sony WF-1000XM5").id)
         assertEquals("beats_studio_buds", PodModelManager.detectModel("Beats Studio Buds").id)
+
+        // All popular brands
+        assertEquals("boat_airdopes", PodModelManager.detectModel("boAt Airdopes 141").id)
+        assertEquals("boat_airdopes", PodModelManager.detectModel("boAt Nirvana Ion").id)
+        assertEquals("noise_buds", PodModelManager.detectModel("Noise Buds VS104").id)
+        assertEquals("boult_buds", PodModelManager.detectModel("Boult Audio Airbass Z40").id)
+        assertEquals("jbl_tune", PodModelManager.detectModel("JBL Tune 230NC TWS").id)
+        assertEquals("bose_qc", PodModelManager.detectModel("Bose QuietComfort Earbuds").id)
+        assertEquals("realme_buds", PodModelManager.detectModel("realme Buds Air 5 Pro").id)
+        assertEquals("xiaomi_buds", PodModelManager.detectModel("Redmi Buds 5").id)
+        assertEquals("soundcore_liberty", PodModelManager.detectModel("Soundcore Liberty 4 NC").id)
+        assertEquals("sennheiser_momentum", PodModelManager.detectModel("Sennheiser Momentum True Wireless 4").id)
+        assertEquals("skullcandy_buds", PodModelManager.detectModel("Skullcandy Dime 3").id)
+        assertEquals("marshall_minor", PodModelManager.detectModel("Marshall Minor IV").id)
+        assertEquals("oppo_enco", PodModelManager.detectModel("OPPO Enco Air 3").id)
+        assertEquals("vivo_tws", PodModelManager.detectModel("vivo TWS 3e").id)
+        assertEquals("huawei_freebuds", PodModelManager.detectModel("HUAWEI FreeBuds 5i").id)
+        assertEquals("cmf_buds", PodModelManager.detectModel("CMF Buds Pro").id)
+        assertEquals("nothing_ear_2", PodModelManager.detectModel("Nothing Ear (2)").id)
+
+        // Color & Universal Fallback - Any unrecognized pod is properly mapped to universal TWS
+        assertEquals("tws_white", PodModelManager.detectModel("White Bluetooth Earphones").id)
+        assertEquals("tws_black", PodModelManager.detectModel("Stealth Black Earbuds").id)
+        assertEquals("universal_tws", PodModelManager.detectModel("Custom Chinese TWS Pods").id)
+        assertEquals("universal_tws", PodModelManager.detectModel("Wireless Headset 5.3").id)
     }
 
     @Test
@@ -156,6 +181,33 @@ class AudioAndModelTest {
             spatialMode = SpatialAudioMode.OFF
         )
         assertTrue("AirPods Pro 2 requires micro-detail treble boost (> +0.15f): $pro2TrebleGain", pro2TrebleGain > 0.15f)
+
+        // Verify boAt / Universal TWS energetic bass response
+        val boatBassGain = AudioEnhancer.calculateTargetGain(
+            centerFreqHz = 80,
+            modelId = "boat_airdopes",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            antiHiss = false,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT,
+            spatialMode = SpatialAudioMode.OFF
+        )
+        assertTrue("boAt Airdopes requires energetic bass compensation (> +0.25f): $boatBassGain", boatBassGain > 0.25f)
+
+        val universalGain = AudioEnhancer.calculateTargetGain(
+            centerFreqHz = 1000,
+            modelId = "universal_tws",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            antiHiss = false,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT,
+            spatialMode = SpatialAudioMode.OFF
+        )
+        assertTrue("Universal TWS vocal clarity must be balanced (> 0.05f): $universalGain", universalGain > 0.05f)
     }
 
     @Test
