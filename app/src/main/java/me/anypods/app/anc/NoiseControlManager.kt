@@ -2,11 +2,9 @@ package me.anypods.app.anc
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
