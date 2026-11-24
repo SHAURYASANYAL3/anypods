@@ -12,6 +12,7 @@ class AnyPodsApp : Application() {
         super.onCreate()
         DiagnosticManager.init(this)
         BluetoothTracker.init(this)
+        me.anypods.app.audio.VoiceMicManager.init(this)
         
         // Start monitoring service safely if permissions are already present
         EarbudService.startServiceSafely(this)

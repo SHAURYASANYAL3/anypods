@@ -45,6 +45,7 @@ object BluetoothTracker {
     private const val KEY_CASE_BATTERY = "case_battery"
     private const val KEY_DEVICE_NAME = "device_name"
     private const val KEY_DEVICE_ADDRESS = "device_address"
+    private const val KEY_SIGNAL_BOOST = "signal_boost_enabled"
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -62,9 +63,12 @@ object BluetoothTracker {
     private var lastPopupTime = 0L
 
     private var batteryPollingJob: Job? = null
+    private var signalBoostKeepAliveJob: Job? = null
 
     private val _earbudState = MutableStateFlow(EarbudState())
     val earbudState: StateFlow<EarbudState> = _earbudState.asStateFlow()
+
+    val signalBoostEnabled = MutableStateFlow(false)
 
     private val BATTERY_SERVICE_UUID = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
     private val BATTERY_LEVEL_UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
@@ -97,6 +101,11 @@ object BluetoothTracker {
             rightBattery = savedRight,
             caseBattery = savedCase
         )
+
+        signalBoostEnabled.value = sp.getBoolean(KEY_SIGNAL_BOOST, false)
+        if (signalBoostEnabled.value) {
+            startSignalBoostKeepAlive()
+        }
 
         val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = bm?.adapter
@@ -204,9 +213,13 @@ object BluetoothTracker {
                 )
                 .build()
 
-            val scanSettings = ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
-                .build()
+            val scanMode = if (signalBoostEnabled.value) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_BALANCED
+            val settingsBuilder = ScanSettings.Builder().setScanMode(scanMode)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && signalBoostEnabled.value) {
+                settingsBuilder.setLegacy(false)
+                settingsBuilder.setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+            }
+            val scanSettings = settingsBuilder.build()
 
             bleScanCallback = object : ScanCallback() {
                 override fun onScanResult(callbackType: Int, result: ScanResult?) {
@@ -320,6 +333,9 @@ object BluetoothTracker {
                 readMetadata(connectedDevice)
                 readGattBattery(connectedDevice)
                 AirPodsL2capClient.connect(connectedDevice)
+                if (signalBoostEnabled.value) {
+                    boostConnectedGattLink(connectedDevice)
+                }
             } else {
                 // Only mark isConnected = false if Bluetooth proxies have had a chance to connect
                 val proxiesReady = (bluetoothA2dp != null || bluetoothHeadset != null)
@@ -809,6 +825,75 @@ object BluetoothTracker {
             })
         } catch (e: Exception) {
             Log.w(TAG, "GATT connection failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Toggles Long-Range Signal Boost mode:
+     * - Configures LE Coded PHY (S=8) for 4x RF link margin & wall penetration on Bluetooth 5.0+
+     * - Sets GATT priority to HIGH (low-latency connection intervals)
+     * - Runs high-power scan mode and periodic keepalive pings to prevent link sleep at extreme distances
+     */
+    fun toggleSignalBoost(context: Context, enabled: Boolean) {
+        signalBoostEnabled.value = enabled
+        prefs?.edit()?.putBoolean(KEY_SIGNAL_BOOST, enabled)?.apply()
+
+        // Restart BLE scanner with high-power RF profile
+        stopAppleBeaconScanning()
+        startAppleBeaconScanning()
+
+        if (enabled) {
+            startSignalBoostKeepAlive()
+            val current = _earbudState.value
+            if (current.isConnected && current.address.isNotBlank()) {
+                val adapter = bluetoothAdapter
+                if (adapter != null) {
+                    try {
+                        val dev = adapter.getRemoteDevice(current.address)
+                        if (dev != null) boostConnectedGattLink(dev)
+                    } catch (_: Exception) {}
+                }
+            }
+        } else {
+            signalBoostKeepAliveJob?.cancel()
+            signalBoostKeepAliveJob = null
+        }
+        Log.i(TAG, "Signal Boost toggled: $enabled")
+    }
+
+    private fun startSignalBoostKeepAlive() {
+        signalBoostKeepAliveJob?.cancel()
+        signalBoostKeepAliveJob = scope.launch(Dispatchers.IO) {
+            while (isActive && signalBoostEnabled.value) {
+                delay(4000)
+                if (AirPodsL2capClient.isConnected) {
+                    AirPodsL2capClient.sendKeepAlivePing()
+                }
+            }
+        }
+    }
+
+    private fun boostConnectedGattLink(device: BluetoothDevice) {
+        val ctx = appContext ?: return
+        try {
+            device.connectGatt(ctx, false, object : BluetoothGattCallback() {
+                override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+                    if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
+                        Log.d(TAG, "Signal Boost: Requesting HIGH connection priority")
+                        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Log.d(TAG, "Signal Boost: Requesting LE Coded PHY (S=8 Long Range)")
+                            gatt?.setPreferredPhy(
+                                BluetoothDevice.PHY_LE_CODED_MASK,
+                                BluetoothDevice.PHY_LE_CODED_MASK,
+                                BluetoothDevice.PHY_OPTION_S8
+                            )
+                        }
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to apply GATT signal boost: ${e.message}")
         }
     }
 }

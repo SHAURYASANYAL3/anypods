@@ -228,22 +228,28 @@ object NoiseControlManager {
     }
 
     private fun handlePersonalizedVolume(context: Context, db: Int) {
+        if (!personalizedVolumeEnabled.value) return
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val currentVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
 
-            // Hysteresis: only adapt when ambient noise has shifted noticeably
-            if (kotlin.math.abs(db - lastPersonalizedDb) < 7) return
+            // ponytail: Always ensure media is not muted accidentally
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            }
 
-            if (db > 68 && currentVol < maxVol) {
+            // Hysteresis: only adapt when ambient noise has shifted noticeably
+            if (kotlin.math.abs(db - lastPersonalizedDb) < 8) return
+
+            if (db > 72 && currentVol < maxVol) {
                 // Loud environment (traffic, train, crowded room): gently raise volume
-                val step = if (db > 80 && currentVol + 2 <= maxVol) 2 else 1
+                val step = if (db > 82 && currentVol + 2 <= maxVol) 2 else 1
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, currentVol + step, 0)
                 lastPersonalizedDb = db
                 Log.d(TAG, "Personalized Volume: Elevated music to ${currentVol + step} (ambient=$db dB)")
-            } else if (db < 46 && currentVol > 3) {
-                // Quiet environment (home, bedroom, library): soften music
+            } else if (db < 42 && currentVol > 8) {
+                // Quiet environment: soften music slightly, but NEVER siphon below audible floor of 8
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, currentVol - 1, 0)
                 lastPersonalizedDb = db
                 Log.d(TAG, "Personalized Volume: Softened music to ${currentVol - 1} (ambient=$db dB)")
@@ -266,10 +272,11 @@ object NoiseControlManager {
     private fun duckMediaVolume(context: Context) {
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             if (originalMediaVolume == null) {
-                originalMediaVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                originalMediaVolume = if (current > 0) current else 10
             }
-            val duckLevel = (originalMediaVolume!! * 0.35f).toInt().coerceAtLeast(1)
+            val duckLevel = (originalMediaVolume!! * 0.6f).toInt().coerceAtLeast(6)
             am.setStreamVolume(AudioManager.STREAM_MUSIC, duckLevel, 0)
             isDucked = true
             Log.d(TAG, "Conversation started: Music ducked to $duckLevel")
@@ -282,8 +289,10 @@ object NoiseControlManager {
         if (!isDucked) return
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            originalMediaVolume?.let {
-                am.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0)
+            val target = originalMediaVolume ?: 10
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, target.coerceAtLeast(6), 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
             }
             isDucked = false
             originalMediaVolume = null

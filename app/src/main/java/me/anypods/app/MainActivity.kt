@@ -65,6 +65,8 @@ import me.anypods.app.ui.SpatialAudioCard
 import me.anypods.app.ui.HeadphoneAccommodationsCard
 import me.anypods.app.ui.AirPodsFrequencyTuningCard
 import me.anypods.app.ui.DiagnosticSettingsCard
+import me.anypods.app.ui.VoiceMicCard
+import me.anypods.app.ui.SignalBoostCard
 import me.anypods.app.ui.DiagnosticConsentDialog
 import me.anypods.app.ui.DiagnosticReportDialog
 import me.anypods.app.ui.SoftwareUpdateDialog
@@ -356,6 +358,12 @@ fun AnyPodsScreen(
     var showReportDialog by remember { mutableStateOf(false) }
     var showConsentDialog by remember { mutableStateOf(false) }
     var reportPreviewText by remember { mutableStateOf("") }
+
+    val micSelection by me.anypods.app.audio.VoiceMicManager.micSelection.collectAsState()
+    val hdVoiceEnabled by me.anypods.app.audio.VoiceMicManager.hdVoiceEnabled.collectAsState()
+    val voiceClarityDsp by me.anypods.app.audio.VoiceMicManager.voiceClarityDspEnabled.collectAsState()
+    val micBoostLevel by me.anypods.app.audio.VoiceMicManager.micBoostLevel.collectAsState()
+    val signalBoostEnabled by BluetoothTracker.signalBoostEnabled.collectAsState()
 
     LaunchedEffect(Unit) {
         if (DiagnosticManager.shouldShowConsentPrompt(context)) {
@@ -1210,6 +1218,24 @@ fun AnyPodsScreen(
                 hasBalancePermission = hasBalancePermission,
                 onSetBalance = onSetBalance,
                 onShowPermissionDialog = { showBalanceDialog = true }
+            )
+
+            // 8. Microphone & Voice Clarity Card (HD 16kHz Wideband Voice, Vocal Gain Boost & Pod Mic Selection)
+            VoiceMicCard(
+                micSelection = micSelection,
+                onSetMicSelection = { me.anypods.app.audio.VoiceMicManager.setMicSelection(context, it) },
+                hdVoiceEnabled = hdVoiceEnabled,
+                onToggleHdVoice = { me.anypods.app.audio.VoiceMicManager.setHdVoiceEnabled(context, it) },
+                voiceClarityDsp = voiceClarityDsp,
+                onToggleVoiceClarityDsp = { me.anypods.app.audio.VoiceMicManager.setVoiceClarityDspEnabled(it) },
+                micBoostLevel = micBoostLevel,
+                onSetMicBoostLevel = { me.anypods.app.audio.VoiceMicManager.setMicBoostLevel(it) }
+            )
+
+            // 9. Long-Range Signal Boost Card (LE Coded PHY S=8 & High-Priority RF)
+            SignalBoostCard(
+                signalBoostEnabled = signalBoostEnabled,
+                onToggleSignalBoost = { BluetoothTracker.toggleSignalBoost(context, it) }
             )
 
             // 7. Find My Earbuds (Precision Distance Radar & Audio Siren)

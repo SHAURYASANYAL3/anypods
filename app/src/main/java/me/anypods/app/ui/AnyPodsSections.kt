@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import me.anypods.app.anc.NoiseMode
 import me.anypods.app.audio.AncIntensity
 import me.anypods.app.audio.FrequencyTuningMode
+import me.anypods.app.audio.MicSelection
 import me.anypods.app.audio.SpatialAudioMode
 import me.anypods.app.audio.ToneIntensity
 import me.anypods.app.audio.ToneProfile
@@ -523,6 +524,276 @@ fun DiagnosticSettingsCard(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Share Logs", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VoiceMicCard(
+    micSelection: MicSelection,
+    onSetMicSelection: (MicSelection) -> Unit,
+    hdVoiceEnabled: Boolean,
+    onToggleHdVoice: (Boolean) -> Unit,
+    voiceClarityDsp: Boolean,
+    onToggleVoiceClarityDsp: (Boolean) -> Unit,
+    micBoostLevel: Float,
+    onSetMicBoostLevel: (Float) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Microphone & Voice Clarity",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                    Text(
+                        text = "HD 16kHz speech & active pod microphone routing",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = when (micSelection) {
+                            MicSelection.AUTO -> "🎙️ Auto"
+                            MicSelection.ALWAYS_LEFT -> "🎙️ Left Pod"
+                            MicSelection.ALWAYS_RIGHT -> "🎙️ Right Pod"
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = "Primary Microphone Pod",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp
+            )
+
+            // Mic selection chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    MicSelection.AUTO to "Auto",
+                    MicSelection.ALWAYS_LEFT to "Left Pod",
+                    MicSelection.ALWAYS_RIGHT to "Right Pod"
+                ).forEach { (sel, label) ->
+                    val isSel = micSelection == sel
+                    Surface(
+                        color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onSetMicSelection(sel) }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = micSelection.subtitle,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                lineHeight = 14.sp
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // HD Voice Wideband Speech toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("HD Wideband Voice (16 kHz)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                        "Forces 16 kHz mSBC wideband voice on Bluetooth calls & recording instead of muffled 8 kHz telephone audio.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(
+                    checked = hdVoiceEnabled,
+                    onCheckedChange = onToggleHdVoice
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Hardware Voice Clarity DSP
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Studio Noise Suppression & AGC", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                        "Applies acoustic echo cancellation, background noise removal, and automatic mic gain boost.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(
+                    checked = voiceClarityDsp,
+                    onCheckedChange = onToggleVoiceClarityDsp
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Mic Boost Level Slider
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Stem Mic Sensitivity Gain", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(
+                        text = "${String.format("%.1f", micBoostLevel)}x Boost",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Slider(
+                    value = micBoostLevel,
+                    onValueChange = onSetMicBoostLevel,
+                    valueRange = 1.0f..2.5f,
+                    steps = 5
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SignalBoostCard(
+    signalBoostEnabled: Boolean,
+    onToggleSignalBoost: (Boolean) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Long-Range Signal Boost",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                    Text(
+                        text = "Extended Bluetooth range & wall penetration",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    color = if (signalBoostEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        text = if (signalBoostEnabled) "⚡ Boost Active (+12 dB)" else "Standard Range",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (signalBoostEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "LE Coded PHY & High RF Priority",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (signalBoostEnabled)
+                                "4x link sensitivity (S=8 forward error correction) and high-priority RF intervals prevent audio stuttering across rooms and through walls."
+                            else
+                                "Turn on to maximize Bluetooth transmission power and avoid audio dropouts at larger distances.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Switch(
+                        checked = signalBoostEnabled,
+                        onCheckedChange = onToggleSignalBoost
+                    )
                 }
             }
         }

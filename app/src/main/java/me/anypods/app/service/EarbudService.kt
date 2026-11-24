@@ -45,6 +45,7 @@ class EarbudService : Service() {
         createNotificationChannel()
         startForegroundWithNotification(BluetoothTracker.earbudState.value)
         AudioEnhancer.initAudioEffects(this)
+        me.anypods.app.audio.VoiceMicManager.init(this)
 
         // Register dynamic audio effect session broadcast receiver for Spotify / media players
         try {

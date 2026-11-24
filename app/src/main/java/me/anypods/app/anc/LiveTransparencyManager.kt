@@ -160,6 +160,7 @@ object LiveTransparencyManager {
             }
 
             record.startRecording()
+            me.anypods.app.audio.VoiceMicManager.attachVoiceDspEffects(record.audioSessionId)
             track.play()
 
             val audioBuffer = ShortArray(bufferSize)
@@ -174,7 +175,7 @@ object LiveTransparencyManager {
             while (_isLiveTransparencyActive.value) {
                 val read = record.read(audioBuffer, 0, audioBuffer.size)
                 if (read > 0) {
-                    val gain = ambientGain.value
+                    val gain = ambientGain.value * me.anypods.app.audio.VoiceMicManager.micBoostLevel.value
                     val focus = speechFocusEnabled.value
 
                     for (i in 0 until read) {
@@ -204,6 +205,7 @@ object LiveTransparencyManager {
             Log.w(TAG, "Live Transparency loop interrupted: ${e.message}")
         } finally {
             _isLiveTransparencyActive.value = false
+            me.anypods.app.audio.VoiceMicManager.releaseVoiceDspEffects()
             try {
                 record?.stop()
                 record?.release()

@@ -45,6 +45,7 @@ object AirPodsL2capClient {
 
     // Command Identifiers
     const val ID_LISTENING_MODE: Byte = 0x0D
+    const val ID_MIC_SELECTION: Byte = 0x11
     const val ID_ONE_BUD_ANC: Byte = 0x1B
     const val ID_VOLUME_SWIPE: Byte = 0x25
     const val ID_ADAPTIVE_VOLUME: Byte = 0x26
@@ -133,6 +134,21 @@ object AirPodsL2capClient {
 
     fun sendAdaptiveVolume(enabled: Boolean): Boolean {
         return sendControlCommand(ID_ADAPTIVE_VOLUME, if (enabled) 0x01 else 0x02)
+    }
+
+    /**
+     * Configures primary microphone routing to Auto (0x00), Always Left (0x01), or Always Right (0x02).
+     */
+    fun sendMicSelection(selection: me.anypods.app.audio.MicSelection): Boolean {
+        return sendControlCommand(ID_MIC_SELECTION, selection.byteVal)
+    }
+
+    /**
+     * Sends a non-intrusive notification query packet to keep the L2CAP connection active
+     * and prevent radio link power down when signal boost is active.
+     */
+    fun sendKeepAlivePing(): Boolean {
+        return sendRaw(PACKET_REQUEST_NOTIFICATIONS)
     }
 
     /**
