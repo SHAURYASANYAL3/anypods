@@ -78,18 +78,43 @@ class BluetoothStateReceiver : BroadcastReceiver() {
     private fun handleVendorSpecificEvent(device: BluetoothDevice?, intent: Intent) {
         if (device == null) return
         val cmd = intent.getStringExtra(BluetoothHeadset.EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_CMD) ?: return
-        val args = intent.getSerializableExtra(BluetoothHeadset.EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_ARGS) as? Array<*> ?: return
+        val rawArgs = intent.getSerializableExtra(BluetoothHeadset.EXTRA_VENDOR_SPECIFIC_HEADSET_EVENT_ARGS) ?: return
+        val args: List<Any?> = when (rawArgs) {
+            is Array<*> -> rawArgs.toList()
+            is Collection<*> -> rawArgs.toList()
+            else -> return
+        }
 
         if (cmd == "+IPHONEACCEV" && args.isNotEmpty()) {
             parseIphoneAccev(device, args)
         }
     }
 
-    private fun parseIphoneAccev(device: BluetoothDevice, args: Array<*>) {
+    private fun parseIphoneAccev(device: BluetoothDevice, args: List<Any?>) {
         try {
-            // +IPHONEACCEV format: [key_count, key1, val1, key2, val2, ...]
-            if (args.isEmpty()) return
-            val count = (args[0] as? Number)?.toInt() ?: ((args[0] as? String)?.toIntOrNull() ?: return)
+            val result = parseIphoneAccevArgs(args) ?: return
+            val (singleBat, leftBat, rightBat) = result
+
+            if (leftBat in 0..100 && rightBat in 0..100) {
+                BluetoothTracker.onDualBatteryChanged(device, leftBat, rightBat)
+            } else if (singleBat in 0..100) {
+                BluetoothTracker.onBatteryChanged(device, singleBat)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error parsing +IPHONEACCEV: ${e.message}")
+        }
+    }
+
+    companion object {
+        /**
+         * Parses +IPHONEACCEV key-value arguments.
+         * Format: [key_count, key1, val1, key2, val2, ...]
+         * Returns Triple(singleBattery, leftBattery, rightBattery).
+         * Values are 0..100 or -1 if not present.
+         */
+        fun parseIphoneAccevArgs(args: List<Any?>): Triple<Int, Int, Int>? {
+            if (args.isEmpty()) return null
+            val count = (args[0] as? Number)?.toInt() ?: ((args[0] as? String)?.toIntOrNull() ?: return null)
             var index = 1
             var leftBat = -1
             var rightBat = -1
@@ -104,31 +129,24 @@ class BluetoothStateReceiver : BroadcastReceiver() {
                 if (key != null && value != null) {
                     when (key) {
                         1 -> {
-                            // Standard Battery level: 0..9 representing 10% to 100%
-                            val pct = ((value + 1) * 10).coerceIn(10, 100)
+                            // Standard Battery level: 0..9 representing 10% to 100%, or direct percentage
+                            val pct = if (value in 0..9) ((value + 1) * 10) else value.coerceIn(0, 100)
                             singleBat = pct
                         }
                         2 -> {
                             // Left earbud or docked
-                            val pct = ((value + 1) * 10).coerceIn(10, 100)
+                            val pct = if (value in 0..9) ((value + 1) * 10) else value.coerceIn(0, 100)
                             leftBat = pct
                         }
                         3 -> {
                             // Right earbud
-                            val pct = ((value + 1) * 10).coerceIn(10, 100)
+                            val pct = if (value in 0..9) ((value + 1) * 10) else value.coerceIn(0, 100)
                             rightBat = pct
                         }
                     }
                 }
             }
-
-            if (leftBat in 0..100 && rightBat in 0..100) {
-                BluetoothTracker.onDualBatteryChanged(device, leftBat, rightBat)
-            } else if (singleBat in 0..100) {
-                BluetoothTracker.onBatteryChanged(device, singleBat)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error parsing +IPHONEACCEV: ${e.message}")
+            return Triple(singleBat, leftBat, rightBat)
         }
     }
 }

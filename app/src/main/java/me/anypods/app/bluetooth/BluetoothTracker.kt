@@ -452,13 +452,25 @@ object BluetoothTracker {
     fun onBatteryChanged(device: BluetoothDevice, batteryLevel: Int) {
         if (batteryLevel !in 0..100) return
         val current = _earbudState.value
-        Log.i(TAG, "Auto-detected real battery level: $batteryLevel% for ${device.name}")
-        DiagnosticManager.logEvent("Battery", "Reported battery: $batteryLevel% for ${device.name ?: "Device"}")
+        val name = device.name ?: current.name
+        val isDifferentDevice = current.address != device.address || !current.isConnected
+        val detectedModel = PodModelManager.detectModel(name)
+        val modelToUse = if (isDifferentDevice) {
+            detectedModel.id
+        } else if (current.modelId.isNotEmpty()) {
+            current.modelId
+        } else {
+            detectedModel.id
+        }
+
+        Log.i(TAG, "Auto-detected real battery level: $batteryLevel% for $name")
+        DiagnosticManager.logEvent("Battery", "Reported battery: $batteryLevel% for $name")
 
         _earbudState.value = current.copy(
             address = device.address,
-            name = device.name ?: current.name,
+            name = name,
             isConnected = true,
+            modelId = modelToUse,
             leftBattery = batteryLevel,
             rightBattery = batteryLevel,
             isLeftCharging = false,
@@ -466,6 +478,10 @@ object BluetoothTracker {
         )
 
         prefs?.edit()?.putInt(KEY_LEFT_BATTERY, batteryLevel)?.putInt(KEY_RIGHT_BATTERY, batteryLevel)?.apply()
+        appContext?.let { ctx ->
+            PodModelManager.saveSelectedModel(ctx, modelToUse)
+        }
+        AudioEnhancer.setTargetModel(modelToUse)
         readMetadata(device)
     }
 
@@ -482,14 +498,26 @@ object BluetoothTracker {
         isCaseCharging: Boolean = false
     ) {
         val current = _earbudState.value
+        val name = device.name ?: current.name
+        val isDifferentDevice = current.address != device.address || !current.isConnected
+        val detectedModel = PodModelManager.detectModel(name)
+        val modelToUse = if (isDifferentDevice) {
+            detectedModel.id
+        } else if (current.modelId.isNotEmpty()) {
+            current.modelId
+        } else {
+            detectedModel.id
+        }
+
         val effectiveLeft = if (leftBattery in 0..100) leftBattery else current.leftBattery
         val effectiveRight = if (rightBattery in 0..100) rightBattery else current.rightBattery
         val effectiveCase = if (caseBattery in 0..100) caseBattery else current.caseBattery
 
         _earbudState.value = current.copy(
             address = device.address,
-            name = device.name ?: current.name,
+            name = name,
             isConnected = true,
+            modelId = modelToUse,
             leftBattery = effectiveLeft,
             rightBattery = effectiveRight,
             caseBattery = effectiveCase,
@@ -502,6 +530,11 @@ object BluetoothTracker {
             ?.putInt(KEY_RIGHT_BATTERY, effectiveRight)
             ?.putInt(KEY_CASE_BATTERY, effectiveCase)
             ?.apply()
+
+        appContext?.let { ctx ->
+            PodModelManager.saveSelectedModel(ctx, modelToUse)
+        }
+        AudioEnhancer.setTargetModel(modelToUse)
     }
 
     fun setLeftPod(level: Int, isCharging: Boolean) {

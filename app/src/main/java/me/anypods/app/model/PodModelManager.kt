@@ -130,7 +130,96 @@ object PodModelManager {
             .trim()
 
         return when {
-            // 1. Apple AirPods Lineup
+            // 1. Beats
+            lower.contains("beats") || lower.contains("powerbeats") || lower.contains("fit pro") || lower.contains("solo buds") ->
+                getModelById("beats_studio_buds")
+
+            // 2. Google Pixel Buds
+            lower.contains("pixel") && (lower.contains("a-series") || lower.contains(" a ") || lower.endsWith(" a")) ->
+                getModelById("pixel_buds_a")
+            lower.contains("pixel") ->
+                getModelById("pixel_buds_pro")
+
+            // 3. OnePlus & Nord
+            lower.contains("oneplus") || lower.contains("nord buds") ->
+                getModelById("oneplus_buds_pro_2")
+
+            // 4. Nothing & CMF
+            lower.contains("cmf") ->
+                getModelById("cmf_buds")
+            lower.contains("nothing") || lower.contains("ear (") || lower.contains("ear 1") || lower.contains("ear 2") || lower.contains("ear stick") ->
+                getModelById("nothing_ear_2")
+
+            // 5. Samsung Galaxy Buds
+            (lower.contains("galaxy") || lower.contains("samsung")) && (lower.contains("3") || lower.contains("blade")) ->
+                getModelById("galaxy_buds_3_pro")
+            (lower.contains("galaxy") || lower.contains("samsung")) ||
+                (lower.contains("buds pro") && !lower.contains("cmf") && !lower.contains("oneplus") && !lower.contains("pixel")) ||
+                lower.contains("buds2") || lower.contains("buds live") || lower.contains("buds fe") ->
+                getModelById("galaxy_buds_pro_2")
+
+            // 6. Sony
+            lower.contains("sony") || lower.contains("wf-") || lower.contains("wh-") || lower.contains("xm5") || lower.contains("xm4") || lower.contains("xm3") || lower.contains("linkbuds") || lower.contains("c500") || lower.contains("c700") ->
+                getModelById("sony_wf1000xm5")
+
+            // 7. boAt
+            lower.contains("boat") || lower.contains("airdopes") || lower.contains("nirvana") || lower.contains("rockerz") ->
+                getModelById("boat_airdopes")
+
+            // 8. Noise (Ensure "noise cancel" or "noise reduction" feature phrases are not confused with Noise brand)
+            ((lower.startsWith("noise") || lower.contains(" noise ")) && !lower.contains("noise cancel") && !lower.contains("noise-cancel") && !lower.contains("noise reduction")) ||
+                lower.contains("noise buds") || lower.contains("shots") || lower.contains("airwave") ->
+                getModelById("noise_buds")
+
+            // 9. Boult Audio
+            lower.contains("boult") || lower.contains("airbass") || lower.contains("curve") || lower.contains("z40") ->
+                getModelById("boult_buds")
+
+            // 10. JBL
+            lower.contains("jbl") || lower.contains("tune") || lower.contains("live pro") || lower.contains("wave") || lower.contains("reflect") || lower.contains("endurance") ->
+                getModelById("jbl_tune")
+
+            // 11. Bose
+            lower.contains("bose") || lower.contains("quietcomfort") || lower.contains("soundsport") ->
+                getModelById("bose_qc")
+
+            // 12. Realme
+            lower.contains("realme") || lower.contains("dizo") ->
+                getModelById("realme_buds")
+
+            // 13. Xiaomi & Redmi
+            lower.contains("xiaomi") || lower.contains("redmi") || lower.contains("airdots") || lower.contains("poco buds") ->
+                getModelById("xiaomi_buds")
+
+            // 14. Anker Soundcore
+            lower.contains("soundcore") || lower.contains("anker") || lower.contains("liberty") || lower.contains("life p") || lower.contains("space a") ->
+                getModelById("soundcore_liberty")
+
+            // 15. Sennheiser
+            lower.contains("sennheiser") || lower.contains("momentum") || lower.contains("cx true") ->
+                getModelById("sennheiser_momentum")
+
+            // 16. Skullcandy
+            lower.contains("skullcandy") || lower.contains("dime") || lower.contains("indy") || lower.contains("sesh") || lower.contains("rail") ->
+                getModelById("skullcandy_buds")
+
+            // 17. Marshall
+            lower.contains("marshall") || lower.contains("minor") || lower.contains("motif") ->
+                getModelById("marshall_minor")
+
+            // 18. OPPO
+            lower.contains("oppo") || lower.contains("enco") ->
+                getModelById("oppo_enco")
+
+            // 19. Vivo
+            lower.contains("vivo") || lower.contains("iqoo") ->
+                getModelById("vivo_tws")
+
+            // 20. Huawei
+            lower.contains("huawei") || lower.contains("freebuds") || lower.contains("freelace") ->
+                getModelById("huawei_freebuds")
+
+            // 21. Apple AirPods Lineup
             lower.contains("max") && (lower.contains("airpod") || lower.contains("pod") || lower.contains("apple")) ->
                 getModelById("airpods_max")
 
@@ -172,94 +261,6 @@ object PodModelManager {
             // Generic AirPods
             lower.contains("airpod") || lower.contains("air pod") || lower.contains("earpods") ->
                 getModelById("airpods_pro_2")
-
-            // 2. Beats
-            lower.contains("beats") || lower.contains("powerbeats") || lower.contains("fit pro") || lower.contains("solo buds") ->
-                getModelById("beats_studio_buds")
-
-            // 3. Google Pixel Buds
-            lower.contains("pixel") && (lower.contains("a-series") || lower.contains(" a ") || lower.endsWith(" a")) ->
-                getModelById("pixel_buds_a")
-            lower.contains("pixel") ->
-                getModelById("pixel_buds_pro")
-
-            // 4. OnePlus & Nord
-            lower.contains("oneplus") || lower.contains("nord buds") ->
-                getModelById("oneplus_buds_pro_2")
-
-            // 5. Nothing & CMF
-            lower.contains("cmf") ->
-                getModelById("cmf_buds")
-            lower.contains("nothing") || lower.contains("ear (") || lower.contains("ear 1") || lower.contains("ear 2") || lower.contains("ear stick") ->
-                getModelById("nothing_ear_2")
-
-            // 6. Samsung Galaxy Buds
-            (lower.contains("galaxy") || lower.contains("samsung")) && (lower.contains("3") || lower.contains("blade")) ->
-                getModelById("galaxy_buds_3_pro")
-            (lower.contains("galaxy") || lower.contains("samsung")) ||
-                (lower.contains("buds pro") && !lower.contains("cmf") && !lower.contains("oneplus") && !lower.contains("pixel")) ||
-                lower.contains("buds2") || lower.contains("buds live") || lower.contains("buds fe") ->
-                getModelById("galaxy_buds_pro_2")
-
-            // 7. Sony
-            lower.contains("sony") || lower.contains("wf-") || lower.contains("wh-") || lower.contains("xm5") || lower.contains("xm4") || lower.contains("xm3") || lower.contains("linkbuds") || lower.contains("c500") || lower.contains("c700") ->
-                getModelById("sony_wf1000xm5")
-
-            // 8. boAt
-            lower.contains("boat") || lower.contains("airdopes") || lower.contains("nirvana") || lower.contains("rockerz") ->
-                getModelById("boat_airdopes")
-
-            // 9. Noise
-            lower.contains("noise") || lower.contains("shots") || lower.contains("airwave") ->
-                getModelById("noise_buds")
-
-            // 10. Boult
-            lower.contains("boult") || lower.contains("airbass") || lower.contains("curve") || lower.contains("z40") ->
-                getModelById("boult_buds")
-
-            // 11. JBL
-            lower.contains("jbl") || lower.contains("tune") || lower.contains("live pro") || lower.contains("wave") || lower.contains("reflect") || lower.contains("endurance") ->
-                getModelById("jbl_tune")
-
-            // 12. Bose
-            lower.contains("bose") || lower.contains("quietcomfort") || lower.contains("soundsport") ->
-                getModelById("bose_qc")
-
-            // 13. Realme
-            lower.contains("realme") || lower.contains("dizo") ->
-                getModelById("realme_buds")
-
-            // 14. Xiaomi & Redmi
-            lower.contains("xiaomi") || lower.contains("redmi") || lower.contains("airdots") || lower.contains("poco buds") ->
-                getModelById("xiaomi_buds")
-
-            // 15. Anker Soundcore
-            lower.contains("soundcore") || lower.contains("anker") || lower.contains("liberty") || lower.contains("life p") || lower.contains("space a") ->
-                getModelById("soundcore_liberty")
-
-            // 16. Sennheiser
-            lower.contains("sennheiser") || lower.contains("momentum") || lower.contains("cx true") ->
-                getModelById("sennheiser_momentum")
-
-            // 17. Skullcandy
-            lower.contains("skullcandy") || lower.contains("dime") || lower.contains("indy") || lower.contains("sesh") || lower.contains("rail") ->
-                getModelById("skullcandy_buds")
-
-            // 18. Marshall
-            lower.contains("marshall") || lower.contains("minor") || lower.contains("motif") ->
-                getModelById("marshall_minor")
-
-            // 19. OPPO
-            lower.contains("oppo") || lower.contains("enco") ->
-                getModelById("oppo_enco")
-
-            // 20. Vivo
-            lower.contains("vivo") || lower.contains("iqoo") ->
-                getModelById("vivo_tws")
-
-            // 21. Huawei
-            lower.contains("huawei") || lower.contains("freebuds") || lower.contains("freelace") ->
-                getModelById("huawei_freebuds")
 
             // 22. Color-specific TWS
             lower.contains("white") || lower.contains("light") ->
