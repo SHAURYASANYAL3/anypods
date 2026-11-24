@@ -21,9 +21,12 @@ class AudioAndModelTest {
     fun testVersionComparison() {
         assertTrue(UpdateManager.isVersionNewer("v1.0.9", "1.0.8"))
         assertTrue(UpdateManager.isVersionNewer("2.0.0", "1.9.9"))
+        assertTrue(UpdateManager.isVersionNewer("v1.3.2", "1.3.1"))
         assertFalse(UpdateManager.isVersionNewer("1.0.8", "1.0.8"))
         assertFalse(UpdateManager.isVersionNewer("1.0.7", "1.0.8"))
         assertFalse(UpdateManager.isVersionNewer("v1.0.8", "1.0.8"))
+        assertFalse(UpdateManager.isVersionNewer("v1.2.1", "1.3.1"))
+        assertFalse(UpdateManager.isVersionNewer("v1.3.0", "1.3.1"))
     }
 
     @Test
@@ -412,5 +415,51 @@ class AudioAndModelTest {
         assertEquals(0x00.toByte(), offPacket[8])
         assertEquals(0x00.toByte(), offPacket[9])
         assertEquals(0x00.toByte(), offPacket[10])
+    }
+
+    @Test
+    fun testExtractSessionIdFromPlaybackConfigString() {
+        class DummyConfig(private val desc: String) {
+            override fun toString(): String = desc
+        }
+
+        val config1 = DummyConfig("AudioPlaybackConfiguration piid:4063 sessionId:3817 state:started")
+        assertEquals(3817, AudioEnhancer.extractSessionId(config1))
+
+        val config2 = DummyConfig("player type:android.media.AudioTrack session:4481 flags=0xA00")
+        assertEquals(4481, AudioEnhancer.extractSessionId(config2))
+
+        val configInvalid = DummyConfig("AudioPlaybackConfiguration with no id")
+        assertEquals(null, AudioEnhancer.extractSessionId(configInvalid))
+    }
+
+    @Test
+    fun testSpatialAudioCurvesCalculation() {
+        val fixedTreble = AudioEnhancer.calculateTargetGain(
+            centerFreqHz = 8000,
+            modelId = "universal_tws",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            antiHiss = false,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT,
+            spatialMode = SpatialAudioMode.FIXED
+        )
+        // Fixed spatial audio must provide significant treble air extension (> +0.35f)
+        assertTrue("Fixed spatial audio must boost air stage: $fixedTreble", fixedTreble > 0.35f)
+
+        val headTrackedBass = AudioEnhancer.calculateTargetGain(
+            centerFreqHz = 80,
+            modelId = "universal_tws",
+            tuningMode = FrequencyTuningMode.MODEL_AUTO,
+            noiseMode = "OFF",
+            ancIntensity = AncIntensity.BALANCED,
+            antiHiss = false,
+            toneProfile = ToneProfile.BALANCED_TONE,
+            toneIntensity = ToneIntensity.SLIGHT,
+            spatialMode = SpatialAudioMode.HEAD_TRACKED
+        )
+        assertTrue("Head tracked 3D audio must provide cinematic sub-bass (> +0.4f): $headTrackedBass", headTrackedBass > 0.40f)
     }
 }

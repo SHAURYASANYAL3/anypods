@@ -15,8 +15,8 @@ data class PodModelInfo(
 )
 
 object PodModelManager {
-    private const val PREFS_NAME = "anypods_prefs"
-    private const val KEY_SELECTED_MODEL = "selected_pod_model"
+    const val PREFS_NAME = "anypods_prefs"
+    const val KEY_SELECTED_MODEL = "selected_pod_model"
 
     val ALL_MODELS = listOf(
         // Apple AirPods - Complete Lineup

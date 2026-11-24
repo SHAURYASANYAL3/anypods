@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleAudioSessionIntent(intent)
+        AudioEnhancer.scanActiveSessions(this)
     }
 
     private fun handleAudioSessionIntent(intent: Intent?) {
@@ -103,12 +104,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AudioEnhancer.initAudioEffects()
+        AudioEnhancer.initAudioEffects(this)
         AudioEnhancer.initBalance(this)
+        UpdateManager.init(this)
+        UpdateManager.checkForUpdates(this, isManual = false)
         handleAudioSessionIntent(intent)
         checkAndRequestPermissions()
-        // Auto-check for updates from GitHub in the background
-        UpdateManager.checkForUpdates(this, isManual = false)
 
         setContent {
             AnyPodsTheme {
@@ -134,6 +135,7 @@ class MainActivity : ComponentActivity() {
             val updateInfo by UpdateManager.updateAvailable.collectAsState()
             val isCheckingUpdate by UpdateManager.isChecking.collectAsState()
             val downloadProgress by UpdateManager.downloadProgress.collectAsState()
+            val autoUpdateEnabled by UpdateManager.autoUpdateEnabled.collectAsState()
 
             val fitTesting by EarTipFitTester.isTesting.collectAsState()
             val fitProgress by EarTipFitTester.testProgress.collectAsState()
@@ -197,6 +199,8 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onCheckForUpdates = { UpdateManager.checkForUpdates(this, isManual = true) },
+                autoUpdateEnabled = autoUpdateEnabled,
+                onToggleAutoUpdate = { UpdateManager.setAutoUpdateEnabled(this, it) },
                 onConfirmUpdate = { info -> UpdateManager.downloadAndInstall(this, info) },
                 onDismissUpdate = { UpdateManager.dismissUpdate() },
                 onRefresh = { BluetoothTracker.refreshConnectedDevice() },
@@ -257,6 +261,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         EarbudService.startServiceSafely(this)
+        AudioEnhancer.scanActiveSessions(this)
         BluetoothTracker.refreshConnectedDevice()
         HearingHealthManager.updateEstimatedDb(this)
         AnyPodsWidgetProvider.updateAllWidgets(this)
@@ -320,6 +325,8 @@ fun AnyPodsScreen(
     dynamicIslandEnabled: Boolean,
     onToggleDynamicIsland: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
+    autoUpdateEnabled: Boolean,
+    onToggleAutoUpdate: (Boolean) -> Unit,
     onConfirmUpdate: (UpdateInfo) -> Unit,
     onDismissUpdate: () -> Unit,
     onRefresh: () -> Unit,
@@ -367,15 +374,16 @@ fun AnyPodsScreen(
 
     // Auto-detect matching pod model when Bluetooth connects, and auto-fetch web image
     LaunchedEffect(state.name, state.isConnected, state.modelId) {
-        if (state.isConnected && state.name.isNotEmpty() && state.name != "Wireless Earbuds") {
-            val detected = if (state.modelId.isNotEmpty() && state.modelId != "airpods_pro_2") {
-                PodModelManager.getModelById(state.modelId)
-            } else {
-                PodModelManager.detectModel(state.name)
+        if (state.modelId.isNotEmpty()) {
+            val modelInfo = PodModelManager.getModelById(state.modelId)
+            selectedDeviceModel = modelInfo.name
+            if (state.name.isNotEmpty() && state.name != "Wireless Earbuds") {
+                PodImageManager.autoFetchIfMissing(context, state.name)
             }
+        } else if (state.isConnected && state.name.isNotEmpty() && state.name != "Wireless Earbuds") {
+            val detected = PodModelManager.detectModel(state.name)
             selectedDeviceModel = detected.name
-            PodModelManager.saveSelectedModel(context, detected.id)
-            AudioEnhancer.setTargetModel(detected.id)
+            BluetoothTracker.setSelectedModel(detected.id)
             PodImageManager.autoFetchIfMissing(context, state.name)
         }
     }
@@ -609,8 +617,7 @@ fun AnyPodsScreen(
                                 modifier = Modifier
                                     .clickable {
                                         selectedDeviceModel = model.name
-                                        PodModelManager.saveSelectedModel(context, model.id)
-                                        AudioEnhancer.setTargetModel(model.id)
+                                        BluetoothTracker.setSelectedModel(model.id)
                                     }
                             ) {
                                 Row(
@@ -1514,6 +1521,32 @@ fun AnyPodsScreen(
                                 Text("Check Update")
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = "Auto In-App Updates",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Automatically downloads and updates seamlessly in-app",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoUpdateEnabled,
+                            onCheckedChange = onToggleAutoUpdate
+                        )
                     }
 
                     if (updateInfo != null) {

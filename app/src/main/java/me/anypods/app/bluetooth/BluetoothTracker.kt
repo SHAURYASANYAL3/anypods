@@ -43,6 +43,8 @@ object BluetoothTracker {
     private const val KEY_LEFT_BATTERY = "left_battery"
     private const val KEY_RIGHT_BATTERY = "right_battery"
     private const val KEY_CASE_BATTERY = "case_battery"
+    private const val KEY_DEVICE_NAME = "device_name"
+    private const val KEY_DEVICE_ADDRESS = "device_address"
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -67,10 +69,34 @@ object BluetoothTracker {
     private val BATTERY_SERVICE_UUID = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
     private val BATTERY_LEVEL_UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
 
+    fun setSelectedModel(modelId: String) {
+        _earbudState.value = _earbudState.value.copy(modelId = modelId)
+        appContext?.let { ctx ->
+            PodModelManager.saveSelectedModel(ctx, modelId)
+        }
+        AudioEnhancer.setTargetModel(modelId)
+    }
+
     fun init(context: Context) {
         appContext = context.applicationContext
         val sp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs = sp
+
+        // Restore last known device state so UI is never blank or waiting
+        val savedModel = PodModelManager.getSelectedModel(context)
+        val savedName = sp.getString(KEY_DEVICE_NAME, "Wireless Earbuds") ?: "Wireless Earbuds"
+        val savedAddr = sp.getString(KEY_DEVICE_ADDRESS, "") ?: ""
+        val savedLeft = sp.getInt(KEY_LEFT_BATTERY, 100)
+        val savedRight = sp.getInt(KEY_RIGHT_BATTERY, 100)
+        val savedCase = sp.getInt(KEY_CASE_BATTERY, 80)
+        _earbudState.value = EarbudState(
+            name = savedName,
+            address = savedAddr,
+            modelId = savedModel.id,
+            leftBattery = savedLeft,
+            rightBattery = savedRight,
+            caseBattery = savedCase
+        )
 
         val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = bm?.adapter
@@ -179,7 +205,7 @@ object BluetoothTracker {
                 .build()
 
             val scanSettings = ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
                 .build()
 
             bleScanCallback = object : ScanCallback() {
@@ -217,20 +243,16 @@ object BluetoothTracker {
     }
 
     private fun handleScanResult(result: ScanResult) {
+        val current = _earbudState.value
+        // Only process Apple AirPods proximity beacons if connected to Apple gear or not connected to non-Apple earbuds
+        val isNonAppleConnected = current.isConnected && !current.modelId.startsWith("airpods") && !current.name.lowercase().contains("airpod")
+        if (isNonAppleConnected) {
+            return
+        }
+
         val scanRecord = result.scanRecord ?: return
         val rawData = scanRecord.getManufacturerSpecificData(AppleBeaconParser.APPLE_MANUFACTURER_ID) ?: return
         val beacon = AppleBeaconParser.parse(rawData) ?: return
-
-        val current = _earbudState.value
-        // If a non-Apple device is currently connected and active, do not let external Apple beacons override it
-        if (current.isConnected &&
-            !current.name.contains("AirPod", ignoreCase = true) &&
-            !current.name.contains("Beats", ignoreCase = true) &&
-            !current.modelId.startsWith("airpods_") &&
-            current.modelId != "beats_studio_buds"
-        ) {
-            return
-        }
 
         val rssi = result.rssi
 
@@ -298,9 +320,10 @@ object BluetoothTracker {
                 readMetadata(connectedDevice)
                 readGattBattery(connectedDevice)
             } else {
-                // No Bluetooth audio gear currently connected. Keep state clean without false positive.
+                // Only mark isConnected = false if Bluetooth proxies have had a chance to connect
+                val proxiesReady = (bluetoothA2dp != null || bluetoothHeadset != null)
                 val current = _earbudState.value
-                if (current.isConnected) {
+                if (proxiesReady && current.isConnected) {
                     _earbudState.value = current.copy(isConnected = false)
                     Log.d(TAG, "No Bluetooth audio device connected. Updated isConnected=false")
                 }
@@ -402,8 +425,11 @@ object BluetoothTracker {
 
         val caseBat = if (current.caseBattery in 1..100) current.caseBattery else 80
 
+        val savedModelId = prefs?.getString(PodModelManager.KEY_SELECTED_MODEL, null)
         val modelToUse = if (isDifferentDevice) {
             detectedModel.id
+        } else if (!savedModelId.isNullOrEmpty()) {
+            savedModelId
         } else if (current.modelId.isNotEmpty()) {
             current.modelId
         } else {
@@ -422,6 +448,13 @@ object BluetoothTracker {
             isRightCharging = current.isRightCharging,
             isCaseCharging = current.isCaseCharging
         )
+
+        prefs?.edit()
+            ?.putString(KEY_DEVICE_NAME, name)
+            ?.putString(KEY_DEVICE_ADDRESS, device.address)
+            ?.putInt(KEY_LEFT_BATTERY, effectiveBattery)
+            ?.putInt(KEY_RIGHT_BATTERY, effectiveBattery)
+            ?.apply()
 
         appContext?.let { ctx ->
             PodModelManager.saveSelectedModel(ctx, modelToUse)

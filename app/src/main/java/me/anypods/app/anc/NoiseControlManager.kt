@@ -2,10 +2,13 @@ package me.anypods.app.anc
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +38,7 @@ object NoiseControlManager {
     val ambientDecibels = MutableStateFlow(42)
 
     private var audioMonitorJob: Job? = null
+    private var transparencyJob: Job? = null
     private var originalMediaVolume: Int? = null
     private var isDucked = false
     private var lastPersonalizedDb = 50
@@ -56,6 +60,7 @@ object NoiseControlManager {
 
         when (mode) {
             NoiseMode.NOISE_CANCELLATION -> {
+            NoiseMode.NOISE_CANCELLATION -> {
                 LiveTransparencyManager.stop()
                 AudioEnhancer.applyNoiseCancellationMode()
             }
@@ -76,9 +81,142 @@ object NoiseControlManager {
                     AudioEnhancer.applyTransparencyMode()
                 }
             }
+            }
         }
 
         updateAudioMonitor(context)
+    }
+
+    /**
+     * Ultra-low-latency real-time Software Transparency passthrough.
+     * Captures ambient sound via microphone and streams it live into the earbuds
+     * with high-pass vocal filtering and soft-knee limiting.
+     */
+    @SuppressLint("MissingPermission")
+    private fun startTransparencyPassthrough(context: Context) {
+        if (transparencyJob?.isActive == true) return
+        audioMonitorJob?.cancel()
+        audioMonitorJob = null
+
+        transparencyJob = scope.launch(Dispatchers.IO) {
+            val sampleRate = 44100
+            val channelIn = AudioFormat.CHANNEL_IN_MONO
+            val channelOut = AudioFormat.CHANNEL_OUT_MONO
+            val encoding = AudioFormat.ENCODING_PCM_16BIT
+            val minRec = AudioRecord.getMinBufferSize(sampleRate, channelIn, encoding)
+            val minTrack = AudioTrack.getMinBufferSize(sampleRate, channelOut, encoding)
+
+            val chunk = 256
+            val recBuf = maxOf(minRec, chunk * 4)
+            val trackBuf = maxOf(minTrack, chunk * 4)
+
+            var record: AudioRecord? = null
+            var track: AudioTrack? = null
+
+            try {
+                record = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate,
+                    channelIn,
+                    encoding,
+                    recBuf
+                )
+
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+
+                val format = AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(channelOut)
+                    .setEncoding(encoding)
+                    .build()
+
+                track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    AudioTrack.Builder()
+                        .setAudioAttributes(attrs)
+                        .setAudioFormat(format)
+                        .setBufferSizeInBytes(trackBuf)
+                        .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                        .setTransferMode(AudioTrack.MODE_STREAM)
+                        .build()
+                } else {
+                    @Suppress("DEPRECATION")
+                    AudioTrack(
+                        AudioManager.STREAM_MUSIC,
+                        sampleRate,
+                        channelOut,
+                        encoding,
+                        trackBuf,
+                        AudioTrack.MODE_STREAM
+                    )
+                }
+
+                if (record.state != AudioRecord.STATE_INITIALIZED || track.state != AudioTrack.STATE_INITIALIZED) {
+                    Log.w(TAG, "Transparency hardware init failed")
+                    return@launch
+                }
+
+                record.startRecording()
+                track.play()
+
+                val buf = ShortArray(chunk)
+                var x1 = 0f
+                var y1 = 0f
+                // Single-pole IIR high-pass filter ~300Hz (eliminates wind and low frequency handling rumble)
+                val rc = 1.0f / (2.0f * Math.PI.toFloat() * 300.0f)
+                val dt = 1.0f / sampleRate
+                val alpha = rc / (rc + dt)
+                val gain = 1.45f  // Vocal intelligibility boost
+
+                Log.i(TAG, "Software Transparency Passthrough: Started low-latency ambient feed")
+
+                var frameCounter = 0
+                var sumSquare = 0.0
+
+                while (isActive) {
+                    val read = record.read(buf, 0, buf.size)
+                    if (read > 0) {
+                        for (i in 0 until read) {
+                            val inSample = buf[i].toFloat()
+                            val outSample = alpha * (y1 + inSample - x1)
+                            x1 = inSample
+                            y1 = outSample
+                            buf[i] = (outSample * gain).toInt().coerceIn(-32767, 32767).toShort()
+                            sumSquare += (buf[i] * buf[i]).toDouble()
+                        }
+                        track.write(buf, 0, read)
+
+                        frameCounter += read
+                        if (frameCounter >= 4410) { // ~100ms interval for ambient decibels
+                            val rms = Math.sqrt(sumSquare / frameCounter)
+                            val db = (20 * Math.log10(maxOf(rms, 1.0))).toInt().coerceIn(30, 100)
+                            ambientDecibels.value = db
+                            sumSquare = 0.0
+                            frameCounter = 0
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Transparency passthrough loop warning: ${e.message}")
+            } finally {
+                try {
+                    record?.stop()
+                    record?.release()
+                } catch (_: Exception) {}
+                try {
+                    track?.stop()
+                    track?.release()
+                } catch (_: Exception) {}
+                Log.i(TAG, "Software Transparency Passthrough: Stopped")
+            }
+        }
+    }
+
+    private fun stopTransparencyPassthrough() {
+        transparencyJob?.cancel()
+        transparencyJob = null
     }
 
     /**
@@ -90,6 +228,14 @@ object NoiseControlManager {
      */
     @SuppressLint("MissingPermission")
     private fun updateAudioMonitor(context: Context) {
+        // When Transparency is active, TransparencyPassthrough itself processes microphone audio
+        // and ambient decibels directly, avoiding concurrent AudioRecord conflicts!
+        if (_currentMode.value == NoiseMode.TRANSPARENCY) {
+            audioMonitorJob?.cancel()
+            audioMonitorJob = null
+            return
+        }
+
         val needsMonitor = conversationAwarenessEnabled.value ||
                 personalizedVolumeEnabled.value ||
                 _currentMode.value == NoiseMode.ADAPTIVE
@@ -150,6 +296,9 @@ object NoiseControlManager {
                                 }
                             } else if (isDucked && (now - lastSpokenTime > 2500)) {
                                 restoreMediaVolume(context)
+                                if (_currentMode.value != NoiseMode.TRANSPARENCY) {
+                                    LiveTransparencyManager.stop()
+                                }
                                 setMode(context, _currentMode.value)
                             }
                         }

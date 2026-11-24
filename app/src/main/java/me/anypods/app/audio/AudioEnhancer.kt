@@ -69,6 +69,7 @@ object AudioEnhancer {
 
     // Active audio sessions (Spotify, YouTube Music, Apple Music, VLC, plus global session 0)
     private val activeSessions = ConcurrentHashMap<Int, SessionAudioEffects>()
+    private var appContext: Context? = null
 
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var mediaPlayer: MediaPlayer? = null
@@ -94,8 +95,152 @@ object AudioEnhancer {
         registerSession(0)
     }
 
-    fun initAudioEffects(audioSessionId: Int = 0) {
-        registerSession(audioSessionId)
+    fun initAudioEffects(context: Context? = null, audioSessionId: Int = 0) {
+        if (context != null) {
+            appContext = context.applicationContext
+            scanActiveSessions(context)
+        }
+        if (audioSessionId > 0) {
+            registerSession(audioSessionId)
+        }
+    }
+
+    /**
+     * Extracts active audio session ID from AudioPlaybackConfiguration
+     * via reflection and string representation fallback.
+     */
+    fun extractSessionId(config: Any): Int? {
+        try {
+            val methods = config.javaClass.methods
+            for (m in methods) {
+                if (m.name == "getClientAudioSessionId" || m.name == "getSessionId") {
+                    val res = m.invoke(config) as? Int
+                    if (res != null && res > 0) return res
+                }
+            }
+            val fields = config.javaClass.declaredFields
+            for (f in fields) {
+                if (f.name == "mSessionId" || f.name == "sessionId") {
+                    f.isAccessible = true
+                    val res = f.getInt(config)
+                    if (res > 0) return res
+                }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val str = config.toString()
+            val match = Regex("""session(?:Id)?[:\s=]+(\d+)""").find(str)
+            if (match != null) {
+                val id = match.groupValues[1].toIntOrNull()
+                if (id != null && id > 0) return id
+            }
+        } catch (_: Exception) {}
+
+        return null
+    }
+
+    /**
+     * Queries internal Android system services (AudioService and AudioFlinger)
+     * using the DUMP IPC mechanism to discover real active media session IDs (e.g. YouTube, Spotify).
+     */
+    fun getSessionIdsFromService(): List<Int> {
+        val sessionIds = mutableListOf<Int>()
+        try {
+            val smClass = Class.forName("android.os.ServiceManager")
+            val getServiceMethod = smClass.getMethod("getService", String::class.java)
+
+            // 1. Query "audio" service (dumpsys audio -> active AudioTrack players)
+            val audioBinder = getServiceMethod.invoke(null, "audio") as? android.os.IBinder
+            if (audioBinder != null) {
+                parseSessionsFromBinder(audioBinder, arrayOf("player"), sessionIds)
+            }
+
+            // 2. Query "media.audio_flinger" service (dumpsys media.audio_flinger -> mixer tracks)
+            val flingerBinder = getServiceMethod.invoke(null, "media.audio_flinger") as? android.os.IBinder
+            if (flingerBinder != null) {
+                parseSessionsFromBinder(flingerBinder, arrayOf(), sessionIds)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "getSessionIdsFromService error: ${e.message}")
+        }
+        return sessionIds
+    }
+
+    private fun parseSessionsFromBinder(binder: android.os.IBinder, args: Array<String>, outSessions: MutableList<Int>) {
+        try {
+            val pipe = android.os.ParcelFileDescriptor.createPipe()
+            val readSide = pipe[0]
+            val writeSide = pipe[1]
+
+            val thread = Thread {
+                try {
+                    binder.dump(writeSide.fileDescriptor, args)
+                } catch (e: Exception) {
+                    Log.w(TAG, "binder dump error: ${e.message}")
+                } finally {
+                    try { writeSide.close() } catch (_: Exception) {}
+                }
+            }
+            thread.start()
+
+            val reader = java.io.BufferedReader(java.io.InputStreamReader(android.os.ParcelFileDescriptor.AutoCloseInputStream(readSide)))
+            val regex = Regex("""(?:session(?:Id)?[:\s=]+)(\d+)""", RegexOption.IGNORE_CASE)
+            val trackRegex = Regex("""\s+\d+\s+yes\s+\d+\s+(\d+)""")
+
+            reader.forEachLine { line ->
+                if (line.contains("USAGE_MEDIA") || line.contains("AudioTrack") || line.contains("player piid")) {
+                    regex.find(line)?.let { match ->
+                        val id = match.groupValues[1].toIntOrNull()
+                        if (id != null && id > 0 && !outSessions.contains(id)) {
+                            outSessions.add(id)
+                        }
+                    }
+                }
+                trackRegex.find(line)?.let { match ->
+                    val id = match.groupValues[1].toIntOrNull()
+                    if (id != null && id > 0 && !outSessions.contains(id)) {
+                        outSessions.add(id)
+                    }
+                }
+            }
+            thread.join(800)
+        } catch (e: Exception) {
+            Log.w(TAG, "parseSessionsFromBinder error: ${e.message}")
+        }
+    }
+
+    /**
+     * Scans currently active audio playback configurations on Android 8.0+
+     * (e.g. YouTube, Spotify, Chrome, games) and attaches AnyPods Master DSP.
+     */
+    fun scanActiveSessions(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                // 1. Discover sessions from service dumpsys (AudioService & AudioFlinger)
+                val serviceSessions = getSessionIdsFromService()
+                if (serviceSessions.isNotEmpty()) {
+                    Log.i(TAG, "scanActiveSessions: Discovered active service sessions: $serviceSessions")
+                    for (sessionId in serviceSessions) {
+                        if (sessionId > 0) {
+                            registerSession(sessionId)
+                        }
+                    }
+                }
+
+                // 2. Fallback to activePlaybackConfigurations
+                val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+                val configs = am.activePlaybackConfigurations
+                for (config in configs) {
+                    val sessionId = extractSessionId(config)
+                    if (sessionId != null && sessionId > 0) {
+                        registerSession(sessionId)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "scanActiveSessions warning: ${e.message}")
+            }
+        }
     }
 
     fun setTargetModel(modelId: String) {
@@ -187,6 +332,9 @@ object AudioEnhancer {
      */
     @Synchronized
     fun recomputeAndApplyCurves() {
+        if (activeSessions.size <= 1) {
+            appContext?.let { scanActiveSessions(it) }
+        }
         if (activeSessions.isEmpty()) {
             registerSession(0)
         }
@@ -374,12 +522,15 @@ object AudioEnhancer {
                     AncIntensity.BALANCED -> 0.75f
                     AncIntensity.COMFORT -> 0.50f
                 }
-                // Gentle low-frequency seal compensation without cutting vocals!
+                // Acoustic Noise Masking & Isolation:
+                // Low rumble masking seal (below 150Hz) masks external traffic/fans (+6.0dB)
+                // Anti-Hiss high-cut (above 4500Hz) filters background white noise & DAC hiss (-5.5dB)
                 when {
-                    centerFreqHz < 140 -> gain += (0.12f * ancMult)
-                    centerFreqHz > 6000 -> {
+                    centerFreqHz < 150 -> gain += (0.40f * ancMult)
+                    centerFreqHz in 150..500 -> gain += (0.15f * ancMult)
+                    centerFreqHz > 4500 -> {
                         if (antiHiss) {
-                            gain -= (0.14f * ancMult) // Filters white noise & DAC hiss
+                            gain -= (0.35f * ancMult)
                         }
                     }
                 }
@@ -387,8 +538,8 @@ object AudioEnhancer {
             "TRANSPARENCY" -> {
                 // Intelligibility boost for human speech while preserving music
                 when {
-                    centerFreqHz in 1000..3800 -> gain += 0.15f
-                    centerFreqHz < 180 -> gain -= 0.06f
+                    centerFreqHz in 800..4000 -> gain += 0.28f
+                    centerFreqHz < 180 -> gain -= 0.12f
                 }
             }
         }
@@ -424,16 +575,25 @@ object AudioEnhancer {
             }
         }
 
-        // 4. Spatial Audio Acoustic Stage Component
+        // 4. Spatial Audio Acoustic Stage Component (Binaural 3D Virtualization Curve)
         when (spatialMode) {
             SpatialAudioMode.FIXED -> {
-                if (centerFreqHz in 2800..8000) gain += 0.10f
-                if (centerFreqHz < 180) gain += 0.08f
+                // Cinema Stage: Frontal soundstage expansion, cinematic sub-bass, treble air
+                when {
+                    centerFreqHz < 120 -> gain += 0.32f
+                    centerFreqHz in 600..1400 -> gain -= 0.18f
+                    centerFreqHz in 2500..5000 -> gain += 0.24f
+                    centerFreqHz > 5000 -> gain += 0.34f
+                }
             }
             SpatialAudioMode.HEAD_TRACKED -> {
-                if (centerFreqHz in 500..900) gain -= 0.05f
-                if (centerFreqHz > 3000) gain += 0.14f
-                if (centerFreqHz < 200) gain += 0.10f
+                // Wide 3D Holographic Stage: Extra wide spatial cues
+                when {
+                    centerFreqHz < 120 -> gain += 0.38f
+                    centerFreqHz in 500..1500 -> gain -= 0.22f
+                    centerFreqHz in 2500..6000 -> gain += 0.30f
+                    centerFreqHz > 6000 -> gain += 0.42f
+                }
             }
             SpatialAudioMode.OFF -> {}
         }
@@ -450,7 +610,8 @@ object AudioEnhancer {
         noiseMode: String,
         ancIntensity: AncIntensity,
         toneProfile: ToneProfile,
-        toneIntensity: ToneIntensity
+        toneIntensity: ToneIntensity,
+        spatialMode: SpatialAudioMode = currentSpatialMode.value
     ): Short {
         val modelBase = when (tuningMode) {
             FrequencyTuningMode.DEEP_BASS -> 650
@@ -489,7 +650,13 @@ object AudioEnhancer {
         }
         val toneExtra = if (toneProfile == ToneProfile.BALANCED_TONE) (120 * intensityFactor).toInt() else 30
 
-        return (modelBase + noiseExtra + toneExtra).coerceIn(0, 1000).toShort()
+        val spatialExtra = when (spatialMode) {
+            SpatialAudioMode.FIXED -> 120
+            SpatialAudioMode.HEAD_TRACKED -> 180
+            SpatialAudioMode.OFF -> 0
+        }
+
+        return (modelBase + noiseExtra + toneExtra + spatialExtra).coerceIn(0, 1000).toShort()
     }
 
     private fun applyCurvesToSession(effects: SessionAudioEffects) {

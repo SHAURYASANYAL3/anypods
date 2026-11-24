@@ -7,6 +7,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -38,6 +40,8 @@ object UpdateManager {
     private const val TAG = "AnyPods.UpdateManager"
     private const val GITHUB_REPO = "SHAURYASANYAL3/anypods"
     private const val CHANNEL_ID = "anypods_updates"
+    private const val PREFS_NAME = "anypods_updater_prefs"
+    private const val KEY_AUTO_UPDATE = "auto_update_enabled"
 
     private val _updateAvailable = MutableStateFlow<UpdateInfo?>(null)
     val updateAvailable = _updateAvailable.asStateFlow()
@@ -48,9 +52,23 @@ object UpdateManager {
     private val _downloadProgress = MutableStateFlow(-1) // -1 = idle, 0..100 = downloading
     val downloadProgress = _downloadProgress.asStateFlow()
 
+    private val _autoUpdateEnabled = MutableStateFlow(true)
+    val autoUpdateEnabled = _autoUpdateEnabled.asStateFlow()
+
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    fun checkForUpdates(context: Context, isManual: Boolean = false) {
+    fun init(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        _autoUpdateEnabled.value = prefs.getBoolean(KEY_AUTO_UPDATE, true)
+    }
+
+    fun setAutoUpdateEnabled(context: Context, enabled: Boolean) {
+        _autoUpdateEnabled.value = enabled
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_AUTO_UPDATE, enabled).apply()
+    }
+
+    fun checkForUpdates(context: Context, isManual: Boolean = false, autoDownloadIfFound: Boolean = false) {
         if (_isChecking.value) return
         _isChecking.value = true
 
@@ -98,7 +116,14 @@ object UpdateManager {
                             releaseNotes = releaseNotes
                         )
                         _updateAvailable.value = update
-                        showUpdateNotification(context, update)
+
+                        val shouldAutoDownload = autoDownloadIfFound || _autoUpdateEnabled.value
+                        if (shouldAutoDownload) {
+                            Log.d(TAG, "Auto-downloading newer update: ${update.tagName}")
+                            downloadAndInstall(context, update, silentAutoInstall = true)
+                        } else {
+                            showUpdateNotification(context, update, isDownloaded = false)
+                        }
                     } else if (isManual) {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "You are using the latest version ($currentVersion)", Toast.LENGTH_SHORT).show()
@@ -127,18 +152,22 @@ object UpdateManager {
         _downloadProgress.value = -1
     }
 
-    fun downloadAndInstall(activity: Activity, updateInfo: UpdateInfo) {
+    fun downloadAndInstall(context: Context, updateInfo: UpdateInfo, silentAutoInstall: Boolean = false) {
         if (_downloadProgress.value in 0..100) return
 
-        // Check install permission for Android 8.0+
+        // Verify install permission for Android 8.0+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!activity.packageManager.canRequestPackageInstalls()) {
+            if (!context.packageManager.canRequestPackageInstalls()) {
                 val intent = Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:${activity.packageName}")
-                )
-                activity.startActivity(intent)
-                Toast.makeText(activity, "Please allow AnyPods to install update packages", Toast.LENGTH_LONG).show()
+                    Uri.parse("package:${context.packageName}")
+                ).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                if (context is Activity) {
+                    Toast.makeText(context, "Please allow AnyPods to install update packages", Toast.LENGTH_LONG).show()
+                }
                 return
             }
         }
@@ -147,33 +176,36 @@ object UpdateManager {
 
         scope.launch {
             try {
-                val apkFile = File(activity.cacheDir, "anypods-update.apk")
+                val apkFile = File(context.cacheDir, "anypods-update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 val url = URL(updateInfo.downloadUrl)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                var conn = (url.openConnection() as HttpURLConnection).apply {
                     connectTimeout = 15000
                     readTimeout = 30000
                     instanceFollowRedirects = true
                     setRequestProperty("User-Agent", "AnyPods-App")
                 }
 
-                // Handle HTTP redirects (GitHub Releases redirect to S3/CDN)
-                var finalConn = conn
+                // Handle HTTP redirects (GitHub Releases 302/307 to AWS S3)
                 var code = conn.responseCode
-                if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == 308) {
-                    val newUrl = conn.getHeaderField("Location")
-                    finalConn = (URL(newUrl).openConnection() as HttpURLConnection).apply {
+                var redirects = 0
+                while ((code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == 308) && redirects < 5) {
+                    val redirectUrl = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    conn = (URL(redirectUrl).openConnection() as HttpURLConnection).apply {
                         connectTimeout = 15000
                         readTimeout = 30000
                         setRequestProperty("User-Agent", "AnyPods-App")
                     }
+                    code = conn.responseCode
+                    redirects++
                 }
 
-                val totalLength = finalConn.contentLength
+                val totalLength = conn.contentLength
                 var downloaded = 0
 
-                finalConn.inputStream.use { input ->
+                conn.inputStream.use { input ->
                     FileOutputStream(apkFile).use { output ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
@@ -191,20 +223,79 @@ object UpdateManager {
                 _downloadProgress.value = 100
                 Log.d(TAG, "Update downloaded successfully: ${apkFile.length()} bytes")
 
+                // Verify downloaded APK integrity
+                val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+                if (archiveInfo == null || archiveInfo.packageName != context.packageName) {
+                    Log.e(TAG, "Downloaded file is corrupted or belongs to another package: ${archiveInfo?.packageName}")
+                    apkFile.delete()
+                    _downloadProgress.value = -1
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Downloaded update is invalid", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                showUpdateNotification(context, updateInfo, isDownloaded = true)
+
                 withContext(Dispatchers.Main) {
-                    installApk(activity, apkFile)
+                    installApk(context, apkFile)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Download failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     _downloadProgress.value = -1
-                    Toast.makeText(activity, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
-    private fun installApk(context: Context, apkFile: File) {
+    fun installApk(context: Context, apkFile: File) {
+        if (!apkFile.exists() || apkFile.length() == 0L) {
+            Toast.makeText(context, "APK file missing or invalid", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Attempt modern PackageInstaller Session first (supports seamless in-app upgrades)
+        try {
+            val packageInstaller = context.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                setAppPackageName(context.packageName)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+            }
+
+            val sessionId = packageInstaller.createSession(params)
+            val session = packageInstaller.openSession(sessionId)
+
+            apkFile.inputStream().use { input ->
+                session.openWrite("anypods_update", 0, apkFile.length()).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+
+            val intent = Intent(context, UpdateInstallReceiver::class.java).apply {
+                action = UpdateInstallReceiver.ACTION_INSTALL_STATUS
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                sessionId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+            )
+
+            session.commit(pendingIntent.intentSender)
+            session.close()
+            Log.d(TAG, "Committed PackageInstaller session $sessionId")
+        } catch (e: Exception) {
+            Log.w(TAG, "PackageInstaller session failed (${e.message}), falling back to Intent", e)
+            installViaIntent(context, apkFile)
+        }
+    }
+
+    fun installViaIntent(context: Context, apkFile: File) {
         try {
             val uri = FileProvider.getUriForFile(
                 context,
@@ -218,13 +309,13 @@ object UpdateManager {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed launching package installer: ${e.message}")
+            Log.e(TAG, "Failed launching package installer intent: ${e.message}")
             Toast.makeText(context, "Install failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     @SuppressLint("MissingPermission")
-    private fun showUpdateNotification(context: Context, update: UpdateInfo) {
+    private fun showUpdateNotification(context: Context, update: UpdateInfo, isDownloaded: Boolean) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -233,13 +324,14 @@ object UpdateManager {
                 "App Updates",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifications for new AnyPods Pro updates on GitHub"
+                description = "Notifications for AnyPods Pro updates"
             }
             nm.createNotificationChannel(channel)
         }
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("EXTRA_UPDATE_TAG", update.tagName)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -248,11 +340,23 @@ object UpdateManager {
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
+        val title = if (isDownloaded) {
+            "AnyPods ${update.tagName} Ready to Install"
+        } else {
+            "New AnyPods Update Available (${update.tagName})"
+        }
+
+        val content = if (isDownloaded) {
+            "Tap to complete the update now."
+        } else {
+            "Tap to download and update to version ${update.tagName}."
+        }
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.airpods)
-            .setContentTitle("New AnyPods Update Available (${update.tagName})")
-            .setContentText("Tap to update or stay on the current version.")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("A new version (${update.tagName}) is ready:\n${update.releaseNotes}"))
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$content\n${update.releaseNotes}"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -263,10 +367,15 @@ object UpdateManager {
 
     private fun getCurrentVersionName(context: Context): String {
         return try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0.0"
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            pInfo.versionName ?: "1.3.1"
         } catch (e: Exception) {
-            "1.0.0"
+            "1.3.1"
         }
     }
 

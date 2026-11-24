@@ -11,6 +11,7 @@ app/build
 local.properties
 
 release/*.apk
+brag-output*/
 
 
 .commitshow/

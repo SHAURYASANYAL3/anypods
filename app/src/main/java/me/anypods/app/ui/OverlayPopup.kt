@@ -34,15 +34,16 @@ object OverlayPopup {
     private var dismissRunnable: Runnable? = null
 
     fun show(context: Context, state: EarbudState) {
+        val appContext = context.applicationContext
         handler.post {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(appContext)) {
                 // Cannot draw over other apps without overlay permission
                 return@post
             }
 
             dismissInternal()
 
-            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
+            val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
             windowManager = wm
 
             val wmLayoutParams = WindowManager.LayoutParams(
@@ -63,7 +64,7 @@ object OverlayPopup {
                 y = 80 // slight margin from bottom
             }
 
-            val container = LinearLayout(context).apply {
+            val container = LinearLayout(appContext).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(48, 48, 48, 48)

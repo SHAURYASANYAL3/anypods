@@ -10,8 +10,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -22,6 +26,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import me.anypods.app.MainActivity
 import me.anypods.app.R
+import me.anypods.app.audio.AudioEnhancer
 import me.anypods.app.bluetooth.BluetoothTracker
 import me.anypods.app.model.EarbudState
 import me.anypods.app.model.PodModelManager
@@ -33,11 +38,13 @@ class EarbudService : Service() {
     private val scope = CoroutineScope(Dispatchers.Main)
     private var stateJob: Job? = null
     private val audioEffectReceiver = AudioEffectReceiver()
+    private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForegroundWithNotification(BluetoothTracker.earbudState.value)
+        AudioEnhancer.initAudioEffects(this)
 
         // Register dynamic audio effect session broadcast receiver for Spotify / media players
         try {
@@ -56,11 +63,39 @@ class EarbudService : Service() {
             e.printStackTrace()
         }
 
+        // Live Audio Playback Tracking for YouTube, browsers, streaming apps & games
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                if (am != null) {
+                    val cb = object : AudioManager.AudioPlaybackCallback() {
+                        override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
+                            AudioEnhancer.scanActiveSessions(this@EarbudService)
+                            for (cfg in configs) {
+                                val sId = AudioEnhancer.extractSessionId(cfg)
+                                if (sId != null && sId > 0) {
+                                    AudioEnhancer.registerSession(sId)
+                                }
+                            }
+                        }
+                    }
+                    am.registerAudioPlaybackCallback(cb, Handler(Looper.getMainLooper()))
+                    playbackCallback = cb
+                }
+            } catch (e: Exception) {
+                Log.w("AnyPods.EarbudService", "Failed to register audio playback callback: ${e.message}")
+            }
+        }
+
         stateJob = scope.launch {
             BluetoothTracker.earbudState.collectLatest { state ->
                 updateNotification(state)
             }
         }
+
+        // Periodic background update check
+        me.anypods.app.updater.UpdateManager.init(this)
+        me.anypods.app.updater.UpdateManager.checkForUpdates(this, isManual = false)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -75,6 +110,14 @@ class EarbudService : Service() {
         try {
             unregisterReceiver(audioEffectReceiver)
         } catch (_: Exception) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            playbackCallback?.let {
+                try {
+                    val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    am?.unregisterAudioPlaybackCallback(it)
+                } catch (_: Exception) {}
+            }
+        }
         super.onDestroy()
     }
 
@@ -135,18 +178,26 @@ class EarbudService : Service() {
                 true
             }
 
+            val hasRecordAudio = ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+
+            var fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            } else {
+                0
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasRecordAudio) {
+                fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 if (hasBtConnect) {
-                    startForeground(
-                        NOTIF_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                    )
+                    startForeground(NOTIF_ID, notification, fgsType)
                 } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     startForeground(NOTIF_ID, notification)
                 } else {
-                    // On Android 14+, foreground service with connectedDevice requires BLUETOOTH_CONNECT.
-                    // Stop service safely until user grants permission in UI.
                     Log.w("AnyPods.EarbudService", "BLUETOOTH_CONNECT permission missing on Android 14+; deferring foreground service")
                     stopSelf()
                 }
