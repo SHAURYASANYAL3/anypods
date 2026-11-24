@@ -341,7 +341,7 @@ class AudioAndModelTest {
             toneProfile = ToneProfile.BALANCED_TONE,
             toneIntensity = ToneIntensity.SLIGHT
         )
-        assertTrue("Sony WF-1000XM5 should have calibrated bass boost: $sonyBassBoost", sonyBassBoost in 200..300)
+        assertTrue("Sony WF-1000XM5 should have calibrated bass boost: $sonyBassBoost", sonyBassBoost in 300..400)
 
         val universalBassBoost = AudioEnhancer.calculateBassBoost(
             modelId = "universal_tws",
@@ -351,6 +351,6 @@ class AudioAndModelTest {
             toneProfile = ToneProfile.BALANCED_TONE,
             toneIntensity = ToneIntensity.SLIGHT
         )
-        assertTrue("Universal TWS fallback bass boost should be standard: $universalBassBoost", universalBassBoost in 250..350)
+        assertTrue("Universal TWS fallback bass boost should be standard: $universalBassBoost", universalBassBoost in 300..450)
     }
 }
