@@ -159,6 +159,57 @@ object AppleSoundChimes {
         }
     }
 
+    fun playInEarChime(context: Context) {
+        scope.launch {
+            val file = getOrCreateChime(context, "in_ear_chime.wav") {
+                // Soft warm insertion ear-con (440Hz with smooth damped decay)
+                val durationSec = 0.22f
+                val totalSamples = (SAMPLE_RATE * durationSec).toInt()
+                val samples = ShortArray(totalSamples)
+
+                for (i in 0 until totalSamples) {
+                    val t = i.toFloat() / SAMPLE_RATE
+                    val progress = t / durationSec
+                    val env = when {
+                        progress < 0.08f -> (progress / 0.08f).toDouble()
+                        else -> exp(-14.0 * (progress - 0.08f))
+                    }
+                    val sample = (sin(2.0 * PI * 440.0 * t) * env * 0.50 * Short.MAX_VALUE.toDouble()).toInt()
+                    samples[i] = sample.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                }
+                samples
+            }
+            playWav(context, file)
+        }
+    }
+
+    fun playLowBatteryChime(context: Context) {
+        scope.launch {
+            val file = getOrCreateChime(context, "low_battery_chime.wav") {
+                // Apple signature low battery chime: two descending tones (440Hz -> 330Hz)
+                val durationSec = 0.38f
+                val totalSamples = (SAMPLE_RATE * durationSec).toInt()
+                val samples = ShortArray(totalSamples)
+
+                for (i in 0 until totalSamples) {
+                    val t = i.toFloat() / SAMPLE_RATE
+                    val progress = t / durationSec
+                    val freq = if (progress < 0.48f) 440.0 else 329.63
+                    val env = when {
+                        progress < 0.05f -> (progress / 0.05f).toDouble()
+                        progress in 0.05f..0.45f -> exp(-7.0 * (progress - 0.05f))
+                        progress in 0.45f..0.50f -> ((progress - 0.45f) / 0.05f).toDouble()
+                        else -> exp(-8.0 * (progress - 0.50f))
+                    }
+                    val sample = (sin(2.0 * PI * freq * t) * env * 0.65 * Short.MAX_VALUE.toDouble()).toInt()
+                    samples[i] = sample.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                }
+                samples
+            }
+            playWav(context, file)
+        }
+    }
+
     private fun playWav(context: Context, file: File) {
         try {
             val mp = MediaPlayer().apply {

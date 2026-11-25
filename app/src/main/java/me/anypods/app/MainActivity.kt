@@ -67,6 +67,8 @@ import me.anypods.app.ui.AirPodsFrequencyTuningCard
 import me.anypods.app.ui.DiagnosticSettingsCard
 import me.anypods.app.ui.VoiceMicCard
 import me.anypods.app.ui.SignalBoostCard
+import me.anypods.app.ui.InEarDetectionCard
+import me.anypods.app.audio.InEarDetectionManager
 import me.anypods.app.ui.DiagnosticConsentDialog
 import me.anypods.app.ui.DiagnosticReportDialog
 import me.anypods.app.ui.SoftwareUpdateDialog
@@ -264,6 +266,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         EarbudService.startServiceSafely(this)
         AudioEnhancer.scanActiveSessions(this)
+        InEarDetectionManager.init(this)
         BluetoothTracker.refreshConnectedDevice()
         HearingHealthManager.updateEstimatedDb(this)
         AnyPodsWidgetProvider.updateAllWidgets(this)
@@ -364,6 +367,11 @@ fun AnyPodsScreen(
     val voiceClarityDsp by me.anypods.app.audio.VoiceMicManager.voiceClarityDspEnabled.collectAsState()
     val micBoostLevel by me.anypods.app.audio.VoiceMicManager.micBoostLevel.collectAsState()
     val signalBoostEnabled by BluetoothTracker.signalBoostEnabled.collectAsState()
+
+    val autoPauseEnabled by InEarDetectionManager.autoPauseEnabled.collectAsState()
+    val autoResumeEnabled by InEarDetectionManager.autoResumeEnabled.collectAsState()
+    val earChimeEnabled by InEarDetectionManager.earChimeEnabled.collectAsState()
+    val lowBatteryAlertEnabled by InEarDetectionManager.lowBatteryAlertEnabled.collectAsState()
 
     LaunchedEffect(Unit) {
         if (DiagnosticManager.shouldShowConsentPrompt(context)) {
@@ -1236,6 +1244,19 @@ fun AnyPodsScreen(
             SignalBoostCard(
                 signalBoostEnabled = signalBoostEnabled,
                 onToggleSignalBoost = { BluetoothTracker.toggleSignalBoost(context, it) }
+            )
+
+            // 10. In-Ear Detection & Smart Media Automation (LibrePods / CAPod Feature)
+            InEarDetectionCard(
+                state = state,
+                autoPauseEnabled = autoPauseEnabled,
+                onToggleAutoPause = { InEarDetectionManager.setAutoPauseEnabled(context, it) },
+                autoResumeEnabled = autoResumeEnabled,
+                onToggleAutoResume = { InEarDetectionManager.setAutoResumeEnabled(context, it) },
+                earChimeEnabled = earChimeEnabled,
+                onToggleEarChime = { InEarDetectionManager.setEarChimeEnabled(context, it) },
+                lowBatteryAlertEnabled = lowBatteryAlertEnabled,
+                onToggleLowBatteryAlert = { InEarDetectionManager.setLowBatteryAlertEnabled(context, it) }
             )
 
             // 7. Find My Earbuds (Precision Distance Radar & Audio Siren)

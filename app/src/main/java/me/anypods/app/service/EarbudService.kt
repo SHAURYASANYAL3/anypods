@@ -46,6 +46,7 @@ class EarbudService : Service() {
         startForegroundWithNotification(BluetoothTracker.earbudState.value)
         AudioEnhancer.initAudioEffects(this)
         me.anypods.app.audio.VoiceMicManager.init(this)
+        me.anypods.app.audio.InEarDetectionManager.init(this)
 
         // Register dynamic audio effect session broadcast receiver for Spotify / media players
         try {
@@ -91,6 +92,7 @@ class EarbudService : Service() {
         stateJob = scope.launch {
             BluetoothTracker.earbudState.collectLatest { state ->
                 updateNotification(state)
+                me.anypods.app.audio.InEarDetectionManager.onEarbudStateChanged(this@EarbudService, state)
             }
         }
 
