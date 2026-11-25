@@ -40,6 +40,22 @@ class EarbudService : Service() {
     private val audioEffectReceiver = AudioEffectReceiver()
     private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
 
+    private val screenReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    BluetoothTracker.onScreenStateChanged(false)
+                    me.anypods.app.anc.NoiseControlManager.onScreenStateChanged(context, false)
+                }
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> {
+                    BluetoothTracker.onScreenStateChanged(true)
+                    me.anypods.app.anc.NoiseControlManager.onScreenStateChanged(context, true)
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -63,6 +79,18 @@ class EarbudService : Service() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        // Register screen state receiver for deep sleep battery optimization
+        try {
+            val screenFilter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+            registerReceiver(screenReceiver, screenFilter)
+        } catch (e: Exception) {
+            Log.w("AnyPods.EarbudService", "Failed to register screen receiver: ${e.message}")
         }
 
         // Live Audio Playback Tracking for YouTube, browsers, streaming apps & games
@@ -112,6 +140,9 @@ class EarbudService : Service() {
         stateJob?.cancel()
         try {
             unregisterReceiver(audioEffectReceiver)
+        } catch (_: Exception) {}
+        try {
+            unregisterReceiver(screenReceiver)
         } catch (_: Exception) {}
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             playbackCallback?.let {

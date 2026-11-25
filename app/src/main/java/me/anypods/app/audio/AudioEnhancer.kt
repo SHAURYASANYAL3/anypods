@@ -843,6 +843,8 @@ object AudioEnhancer {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         try {
+            val maxAlarm = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxAlarm, 0)
             val maxMusic = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxMusic, 0)
         } catch (e: Exception) {
@@ -855,8 +857,9 @@ object AudioEnhancer {
             val mp = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
                         .build()
                 )
                 setDataSource(context, Uri.fromFile(sirenFile))
@@ -869,7 +872,7 @@ object AudioEnhancer {
 
             try {
                 loudnessEnhancer = LoudnessEnhancer(mp.audioSessionId).apply {
-                    setTargetGain(3000) // +3000 mB = +30 dB
+                    setTargetGain(5000) // +5000 mB = +50 dB max digital loudness gain
                     enabled = true
                 }
             } catch (e: Exception) {
@@ -900,7 +903,7 @@ object AudioEnhancer {
     }
 
     private fun getOrCreateSirenWav(context: Context): File {
-        val file = File(context.cacheDir, "find_my_siren.wav")
+        val file = File(context.cacheDir, "find_my_siren_max.wav")
         if (file.exists() && file.length() > 1000) {
             return file
         }
@@ -912,13 +915,15 @@ object AudioEnhancer {
         val bitsPerSample = 16
         val dataSize = numSamples * numChannels * (bitsPerSample / 8)
 
+        // Peak ear canal sensitivity frequency (2400Hz - 2850Hz) for extreme distance audibility
         val sampleData = ShortArray(numSamples * 2)
         for (i in 0 until numSamples) {
             val t = i.toDouble() / sampleRate
-            val freq = if ((i / (sampleRate / 4)) % 2 == 0) 3400.0 else 4200.0
+            // High penetration rapid warble (2400Hz / 2850Hz every 125ms)
+            val freq = if ((i / (sampleRate / 8)) % 2 == 0) 2400.0 else 2850.0
             val sine = sin(2.0 * Math.PI * freq * t)
-            val wave = if (sine > 0.0) 0.95 else -0.95
-            val sampleVal = (wave * Short.MAX_VALUE * 0.98).toInt().toShort()
+            val wave = if (sine > 0.0) 0.99 else -0.99
+            val sampleVal = (wave * Short.MAX_VALUE * 0.99).toInt().toShort()
 
             sampleData[2 * i] = sampleVal
             sampleData[2 * i + 1] = sampleVal

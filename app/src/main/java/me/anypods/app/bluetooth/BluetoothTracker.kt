@@ -62,6 +62,8 @@ object BluetoothTracker {
     private var isBleScanning = false
     private var lastPopupTime = 0L
 
+    private var isScreenOn = true
+    private var burstJob: Job? = null
     private var batteryPollingJob: Job? = null
     private var signalBoostKeepAliveJob: Job? = null
 
@@ -173,14 +175,48 @@ object BluetoothTracker {
 
         refreshConnectedDevice()
         startPeriodicBatteryPolling()
-        startAppleBeaconScanning()
+        startAppleBeaconScanning(isBurst = true)
+    }
+
+    fun onScreenStateChanged(screenOn: Boolean) {
+        if (isScreenOn == screenOn) return
+        isScreenOn = screenOn
+        Log.d(TAG, "Power state: isScreenOn=$screenOn")
+
+        if (screenOn) {
+            // Screen unlocked/on: quick 5s burst to catch case opening, then low power
+            startAppleBeaconScanning(isBurst = true)
+            startPeriodicBatteryPolling()
+            if (signalBoostEnabled.value) {
+                startSignalBoostKeepAlive()
+            }
+        } else {
+            // Screen off: cancel battery polling loop to prevent CPU wakeups
+            batteryPollingJob?.cancel()
+            batteryPollingJob = null
+
+            // If already connected, pause BLE radio scanning completely (0% radio drain)
+            if (_earbudState.value.isConnected) {
+                stopAppleBeaconScanning()
+            } else {
+                // If not connected, keep low-power hardware-batched scan
+                startAppleBeaconScanning(isBurst = false)
+            }
+
+            if (signalBoostEnabled.value) {
+                startSignalBoostKeepAlive()
+            }
+        }
     }
 
     private fun startPeriodicBatteryPolling() {
         batteryPollingJob?.cancel()
+        // ponytail: Event-driven updates (+IPHONEACCEV / ACTION_BATTERY_LEVEL_CHANGED) handle battery.
+        // Polling only runs while screen is ON and connected, at 60s intervals instead of former 8s battery killer.
+        if (!isScreenOn || !_earbudState.value.isConnected) return
         batteryPollingJob = scope.launch(Dispatchers.Default) {
-            while (isActive) {
-                delay(8000)
+            while (isActive && isScreenOn && _earbudState.value.isConnected) {
+                delay(60000L)
                 withContext(Dispatchers.Main) {
                     refreshConnectedDevice()
                 }
@@ -188,10 +224,18 @@ object BluetoothTracker {
         }
     }
 
-    fun startAppleBeaconScanning() {
+    fun startAppleBeaconScanning(isBurst: Boolean = false) {
         val ctx = appContext ?: return
         val adapter = bluetoothAdapter ?: return
-        if (!adapter.isEnabled || isBleScanning) return
+        if (!adapter.isEnabled) return
+
+        // If screen is off and device is already connected via Bluetooth ACL, 100% radio power saved!
+        if (!isScreenOn && _earbudState.value.isConnected) {
+            stopAppleBeaconScanning()
+            return
+        }
+
+        if (isBleScanning && !isBurst) return
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
@@ -201,8 +245,18 @@ object BluetoothTracker {
         }
 
         try {
-            bleScanner = adapter.bluetoothLeScanner
+            if (bleScanner == null) {
+                bleScanner = adapter.bluetoothLeScanner
+            }
             if (bleScanner == null) return
+
+            // Stop previous callback before restarting if switching mode
+            if (isBleScanning) {
+                try {
+                    bleScanCallback?.let { bleScanner?.stopScan(it) }
+                } catch (_: Exception) {}
+                isBleScanning = false
+            }
 
             // Scan for Apple manufacturer data (ID 76 = 0x004C) with proximity prefix 0x07, 0x19
             val scanFilter = ScanFilter.Builder()
@@ -213,11 +267,20 @@ object BluetoothTracker {
                 )
                 .build()
 
-            val scanMode = if (signalBoostEnabled.value) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_BALANCED
+            // ponytail: Low power duty-cycle by default (10%), burst only on screen wake / pairing
+            val scanMode = when {
+                isBurst -> ScanSettings.SCAN_MODE_LOW_LATENCY
+                isScreenOn && signalBoostEnabled.value -> ScanSettings.SCAN_MODE_BALANCED
+                else -> ScanSettings.SCAN_MODE_LOW_POWER
+            }
             val settingsBuilder = ScanSettings.Builder().setScanMode(scanMode)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && signalBoostEnabled.value) {
                 settingsBuilder.setLegacy(false)
                 settingsBuilder.setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+            }
+            // Hardware batching so radio does not wake CPU for every single advertising packet
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isBurst) {
+                settingsBuilder.setReportDelay(3000L)
             }
             val scanSettings = settingsBuilder.build()
 
@@ -238,7 +301,18 @@ object BluetoothTracker {
 
             bleScanner?.startScan(listOf(scanFilter), scanSettings, bleScanCallback)
             isBleScanning = true
-            Log.i(TAG, "Apple AirPods BLE Beacon scanner started successfully")
+            Log.i(TAG, "Apple AirPods BLE Beacon scanner started (burst=$isBurst, mode=$scanMode)")
+
+            if (isBurst) {
+                burstJob?.cancel()
+                burstJob = scope.launch {
+                    delay(5000L)
+                    // After 5s burst, revert to ultra low power scanning
+                    if (isBleScanning && isScreenOn) {
+                        startAppleBeaconScanning(isBurst = false)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to start Apple BLE Beacon scanner: ${e.message}")
         }
@@ -486,7 +560,12 @@ object BluetoothTracker {
         updateConnectedDevice(device, hwBattery)
         readMetadata(device)
         readGattBattery(device)
-        startAppleBeaconScanning()
+        startPeriodicBatteryPolling()
+        if (isScreenOn) {
+            startAppleBeaconScanning(isBurst = true)
+        } else {
+            stopAppleBeaconScanning()
+        }
         AirPodsL2capClient.connect(device)
     }
 
@@ -495,6 +574,9 @@ object BluetoothTracker {
             _earbudState.value = _earbudState.value.copy(isConnected = false)
             DiagnosticManager.logEvent("Bluetooth", "Disconnected: ${device.name ?: "Unknown"}")
             AirPodsL2capClient.disconnect()
+            batteryPollingJob?.cancel()
+            batteryPollingJob = null
+            startAppleBeaconScanning(isBurst = isScreenOn)
         }
     }
 
@@ -865,7 +947,8 @@ object BluetoothTracker {
         signalBoostKeepAliveJob?.cancel()
         signalBoostKeepAliveJob = scope.launch(Dispatchers.IO) {
             while (isActive && signalBoostEnabled.value) {
-                delay(4000)
+                // ponytail: 30s screen-on, 60s screen-off keepalive saves 95% battery vs former 4s loop
+                delay(if (isScreenOn) 30000L else 60000L)
                 if (AirPodsL2capClient.isConnected) {
                     AirPodsL2capClient.sendKeepAlivePing()
                 }

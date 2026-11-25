@@ -264,6 +264,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        BluetoothTracker.onScreenStateChanged(true)
         EarbudService.startServiceSafely(this)
         AudioEnhancer.scanActiveSessions(this)
         InEarDetectionManager.init(this)

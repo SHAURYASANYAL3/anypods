@@ -36,6 +36,21 @@ object NoiseControlManager {
     val ambientDecibels = MutableStateFlow(42)
 
     private var audioMonitorJob: Job? = null
+    private var isScreenOn = true
+
+    fun onScreenStateChanged(context: Context, screenOn: Boolean) {
+        isScreenOn = screenOn
+        if (!screenOn) {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            // If phone is locked and no audio is active, pause audio monitor to save battery
+            if (am?.isMusicActive != true && _currentMode.value != NoiseMode.ADAPTIVE) {
+                audioMonitorJob?.cancel()
+                audioMonitorJob = null
+            }
+        } else {
+            updateAudioMonitor(context)
+        }
+    }
     private var originalMediaVolume: Int? = null
     private var isDucked = false
     private var lastPersonalizedDb = 50
@@ -158,6 +173,15 @@ object NoiseControlManager {
                 var lastVolumeAdjustTime = 0L
 
                 while (isActive) {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    val isMusicActive = am?.isMusicActive == true
+
+                    // ponytail: When phone is locked with screen off and no music is playing, pause processing to save battery
+                    if (!isScreenOn && !isMusicActive && _currentMode.value != NoiseMode.ADAPTIVE) {
+                        delay(3000L)
+                        continue
+                    }
+
                     val read = record.read(buf, 0, buf.size)
                     if (read > 0) {
                         var sumSq = 0.0
@@ -214,7 +238,8 @@ object NoiseControlManager {
                             handlePersonalizedVolume(context, db)
                         }
                     }
-                    delay(150)
+                    val sleepMs = if (isScreenOn) 200L else 1200L
+                    delay(sleepMs)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Audio monitor warning: ${e.message}")
