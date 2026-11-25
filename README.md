@@ -10,9 +10,10 @@
 <br/>
 
 [![GitHub Release](https://img.shields.io/github/v/release/SHAURYASANYAL3/anypods?style=for-the-badge&color=38BDF8&label=Release)](https://github.com/SHAURYASANYAL3/anypods/releases/latest)
+[![F-Droid](https://img.shields.io/badge/F--Droid-Ready%20for%20Inclusion-1976D2?style=for-the-badge&logo=f-droid&logoColor=white)](metadata/me.anypods.app.yml)
+[![IzzyOnDroid](https://img.shields.io/badge/IzzyOnDroid-F--Droid%20Repo-009688?style=for-the-badge&logo=f-droid&logoColor=white)](https://apt.izzysoft.de/fdroid/)
+[![Obtainium](https://img.shields.io/badge/Obtainium-1--Click%20Install-0284C7?style=for-the-badge&logo=android&logoColor=white)](https://api.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/SHAURYASANYAL3/anypods)
 [![Android Compatibility](https://img.shields.io/badge/Android-8.0%20to%2016%2B%20(API%2026%E2%80%9335%2B)-34D399?style=for-the-badge&logo=android&logoColor=white)](https://github.com/SHAURYASANYAL3/anypods)
-[![Root Status](https://img.shields.io/badge/Root-Not%20Required-818CF8?style=for-the-badge&logo=shield)](https://github.com/SHAURYASANYAL3/anypods)
-[![UI System](https://img.shields.io/badge/UI-Material%203%20Expressive-F43F5E?style=for-the-badge&logo=materialdesign&logoColor=white)](https://m3.material.io)
 [![License](https://img.shields.io/github/license/SHAURYASANYAL3/anypods?style=for-the-badge&color=FBBF24)](LICENSE)
 
 <br/>
@@ -124,6 +125,28 @@ adb install -r anypods-release.apk
 
 ---
 
+## 📥 Install AnyPods Pro (App Stores & Downloads)
+
+AnyPods Pro is 100% Free and Open Source. You can install it through your favorite open-source app store or directly from GitHub:
+
+<br/>
+
+| Store / Platform | Method | Description |
+| :--- | :---: | :--- |
+| **Direct APK** | [**Download Latest APK**](https://github.com/SHAURYASANYAL3/anypods/releases/latest) | Official signed APK directly from GitHub Releases with built-in in-app updater. |
+| **Obtainium** | [**1-Click Install via Obtainium**](https://api.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/SHAURYASANYAL3/anypods) | Tracks GitHub Releases directly and updates AnyPods Pro automatically in the background. |
+| **IzzyOnDroid** *(F-Droid)* | [**Add to F-Droid Client**](https://apt.izzysoft.de/fdroid/) | Add IzzyOnDroid repo to **F-Droid**, **Neo Store**, or **Droid-ify** to discover and install AnyPods. |
+| **Official F-Droid** | [**F-Droid Recipe**](metadata/me.anypods.app.yml) | Packaging recipe ready for inclusion in the official `f-droid.org` repository. |
+
+<br/>
+
+### 📲 1-Click Install with Obtainium
+If you have [Obtainium](https://github.com/ImranR98/Obtainium) installed, simply tap the button below or scan to add AnyPods Pro with automatic GitHub update tracking:
+
+[![Add to Obtainium](https://img.shields.io/badge/Obtainium-Add%20App%20Directly-0284C7?style=for-the-badge&logo=android&logoColor=white)](https://api.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/SHAURYASANYAL3/anypods)
+
+---
+
 ## 🛠️ Building from Source
 
 ### Prerequisites
@@ -169,4 +192,4 @@ Contributions, bug reports, and pull requests are warmly welcomed!
 
 ## 📄 License
 
-AnyPods Pro is released under the **[MIT License](LICENSE)**. Built for universal Bluetooth freedom.
+AnyPods Pro is free and open-source software licensed under the **[GNU General Public License v3.0 (GPL-3.0)](LICENSE)**. Built for universal Bluetooth freedom.

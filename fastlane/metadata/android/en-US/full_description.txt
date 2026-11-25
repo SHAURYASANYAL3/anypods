@@ -1,0 +1,17 @@
+AnyPods Pro brings Apple-grade iOS popups, studio acoustics, binaural 3D Spatial Audio, and sub-meter distance radar to any wireless earbuds on Android.
+
+Zero root required • Zero vendor spoofing • 100% Free & Open Source
+
+FEATURES:
+• Material 3 Expressive UI: Built for Android 16 with organic squircles, fluid surfaces, and dynamic AMOLED Obsidian theme.
+• Dynamic Island & Floating Popups: Instant popup card when opening your earbud case with accurate battery percentages for Left Pod, Right Pod, and Case.
+• 3D Spatial Audio (Binaural Soundstage): Transforms stereo music and video into an expansive 3D theatre soundstage.
+• Harman Target Studio Acoustics: 5-band parametric equalizer tuned to the acoustic Harman target curve with deep sub-bass and pristine vocal separation.
+• Active Noise Control & Live Transparency: Full hardware AACP protocol switching between Noise Cancellation, Transparency, Adaptive, and Off.
+• Microphone & Voice Clarity Booster: Forces 16 kHz mSBC HD wideband speech over Bluetooth SCO and provides primary microphone routing (Auto, Always Left Pod, Always Right Pod).
+• Long-Range Signal Booster: Leverages Bluetooth 5.0+ LE Coded PHY (S=8) and high RF priority to eliminate stuttering and maintain stable audio across rooms and through walls.
+• Find My Earbuds Precision Radar: Real-time sub-meter Bluetooth proximity radar with signal strength bars and high-pitch locator beacon.
+• Safe Hearing & Volume Limiter: Real-time acoustic decibel monitoring with automatic ear protection against sudden loud audio spikes.
+• Seamless In-App Updates: Verifies releases directly via GitHub API and installs seamlessly without manual browser downloads.
+
+Supports Apple AirPods (all generations), Samsung Galaxy Buds, Sony WF-1000XM, Nothing Ear, OnePlus Buds, Beats, Boat, and generic Bluetooth TWS earbuds.

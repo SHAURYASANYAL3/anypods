@@ -1,0 +1,42 @@
+Categories:
+  - Multimedia
+  - System
+License: GPL-3.0-or-later
+AuthorName: Shaurya Sanyal
+SourceCode: https://github.com/SHAURYASANYAL3/anypods
+IssueTracker: https://github.com/SHAURYASANYAL3/anypods/issues
+Changelog: https://github.com/SHAURYASANYAL3/anypods/releases
+
+AutoName: AnyPods Pro
+Summary: Universal AirPods features, studio acoustics & precision radar on Android
+Description: |-
+  AnyPods Pro brings Apple-grade iOS popups, studio acoustics, binaural 3D
+  Spatial Audio, and sub-meter distance radar to any wireless earbuds on Android.
+
+  Zero root required • Zero vendor spoofing • 100% Free & Open Source
+
+  Features:
+  * Material 3 Expressive UI built for Android 16
+  * Dynamic Island & Floating Popups with dual-bud + case battery telemetry
+  * 3D Spatial Audio & Harman Target Studio Acoustics with 5-band parametric EQ
+  * Active Noise Control & Live Transparency via hardware AACP protocol
+  * Microphone & Voice Clarity Booster (16 kHz mSBC wideband speech + pod mic routing)
+  * Long-Range Signal Booster with LE Coded PHY (S=8)
+  * Find My Earbuds Precision Radar with sub-meter distance tracking
+  * Safe Hearing & Volume Peak Limiter
+
+RepoType: git
+Repo: https://github.com/SHAURYASANYAL3/anypods.git
+
+Builds:
+  - versionName: 1.3.1
+    versionCode: 21
+    commit: v1.3.1
+    subdir: app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version %v
+UpdateCheckMode: Tags
+CurrentVersion: 1.3.1
+CurrentVersionCode: 21
