@@ -1,0 +1,6 @@
+- Added HD Wideband Voice (mSBC 16 kHz) over Bluetooth SCO for crystal-clear microphone audio
+- Added Primary Microphone Selector: Auto-Switch, Always Left Pod, or Always Right Pod
+- Added Studio Voice Pre-Processing: Hardware Noise Suppressor, Echo Canceller, and Auto-Gain Control
+- Added Long-Range Signal Booster with LE Coded PHY (S=8) for 4x RF link margin & wall penetration
+- Fixed background media volume siphoning and added auto-unmute protection
+- Added direct in-app updates with keystore pinning and SHA-256 verification

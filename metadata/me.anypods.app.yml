@@ -29,14 +29,14 @@ RepoType: git
 Repo: https://github.com/SHAURYASANYAL3/anypods.git
 
 Builds:
-  - versionName: 1.3.1
-    versionCode: 21
-    commit: v1.3.1
+  - versionName: 1.3.2
+    versionCode: 22
+    commit: v1.3.2
     subdir: app
     gradle:
       - yes
 
 AutoUpdateMode: Version %v
 UpdateCheckMode: Tags
-CurrentVersion: 1.3.1
-CurrentVersionCode: 21
+CurrentVersion: 1.3.2
+CurrentVersionCode: 22
