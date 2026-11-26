@@ -78,6 +78,16 @@ impl AudioPlayer {
         Self::play_wav_bytes(SIREN_WAV.get(), true);
     }
 
+    /// Play chirp in left ear only
+    pub fn play_chirp_left() {
+        Self::play_balance_test(-1.0);
+    }
+
+    /// Play chirp in right ear only
+    pub fn play_chirp_right() {
+        Self::play_balance_test(1.0);
+    }
+
     /// Play L/R Balance test chirp panned to left/right
     pub fn play_balance_test(balance: f32) {
         let (left_gain, right_gain) = if balance < 0.0 {
