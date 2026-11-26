@@ -14,6 +14,7 @@
 [![IzzyOnDroid](https://img.shields.io/badge/IzzyOnDroid-F--Droid%20Repo-009688?style=for-the-badge&logo=f-droid&logoColor=white)](https://apt.izzysoft.de/fdroid/)
 [![Obtainium](https://img.shields.io/badge/Obtainium-1--Click%20Install-0284C7?style=for-the-badge&logo=android&logoColor=white)](https://api.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/SHAURYASANYAL3/anypods)
 [![Android Compatibility](https://img.shields.io/badge/Android-8.0%20to%2016%2B%20(API%2026%E2%80%9335%2B)-34D399?style=for-the-badge&logo=android&logoColor=white)](https://github.com/SHAURYASANYAL3/anypods)
+[![Desktop](https://img.shields.io/badge/Desktop-Windows%20%7C%20macOS%20%7C%20Linux-6366F1?style=for-the-badge&logo=rust&logoColor=white)](desktop)
 [![License](https://img.shields.io/github/license/SHAURYASANYAL3/anypods?style=for-the-badge&color=FBBF24)](LICENSE)
 
 <br/>
@@ -96,6 +97,16 @@ AnyPods Pro is built from the ground up on Google's **Material 3 Expressive desi
 - **Concentric Bluetooth Distance Radar:** Tracks your lost earbuds in real time using high-frequency Bluetooth RSSI signal attenuation with sub-meter accuracy (< 1m proximity lock-on).
 - **+25 dB Hardware Loudness Siren:** Bypasses system volume restrictions, generating an ultra-piercing dual-tone siren (3.2 kHz / 4.0 kHz) boosted by Android's hardware `LoudnessEnhancer` (+2500 mB) so you can find earbuds under cushions, in grass, or across rooms.
 - **Individual Bud Locator:** Independent Left and Right chirp triggers.
+
+---
+
+### 6. 💻 AnyPods Desktop (Windows, macOS, Linux)
+AnyPods Pro now includes a blazing-fast native desktop app written in **pure Rust** (`desktop/`):
+- **Cross-Platform Bluetooth LE:** Powered by `btleplug` using native OS drivers (WinRT on Windows 10/11, CoreBluetooth on macOS, and BlueZ DBus on Linux).
+- **Zero Heavy Web Runtimes:** No Electron or Chromium overhead. Tiny ~4.5 MB standalone binary rendered with hardware-accelerated immediate-mode GPU graphics (`egui`/`eframe`).
+- **Triple Telemetry & Earbuds Proximity:** Real-time decoding of Apple manufacturer beacons (`0x004C`) for Left, Right, and Case battery levels + charging states (⚡).
+- **In-Ear Detection Auto-Pause/Resume:** Automatically pauses media playback via native OS media hooks (`keybd_event` on Windows, `osascript` on macOS, `playerctl` on Linux) when you take a bud out of your ear, and resumes when put back.
+- **Hardware Noise Control Selector:** Quick toggles for Off, Noise Cancellation, and Transparency.
 
 ---
 

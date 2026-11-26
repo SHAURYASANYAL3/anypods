@@ -15,3 +15,6 @@ brag-output*/
 
 
 .commitshow/
+target/
+/desktop/target/
+/desktop/release/

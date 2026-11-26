@@ -1,0 +1,87 @@
+name: Build & Release AnyPods Desktop (Windows, macOS, Linux)
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin_name: anypods-desktop.exe
+            asset_name: AnyPods-Desktop-Windows-x64.zip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bin_name: anypods-desktop
+            asset_name: AnyPods-Desktop-macOS-arm64.zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin_name: anypods-desktop
+            asset_name: AnyPods-Desktop-Linux-x64.tar.gz
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - name: Build Desktop Release Binary
+        working-directory: desktop
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package Windows Artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "desktop/target/${{ matrix.target }}/release/${{ matrix.bin_name }}" -DestinationPath "${{ matrix.asset_name }}"
+
+      - name: Package macOS Artifact
+        if: runner.os == 'macOS'
+        run: |
+          cd desktop/target/${{ matrix.target }}/release
+          zip -9 ../../../../${{ matrix.asset_name }} ${{ matrix.bin_name }}
+
+      - name: Package Linux Artifact
+        if: runner.os == 'Linux'
+        run: |
+          cd desktop/target/${{ matrix.target }}/release
+          tar -czvf ../../../../${{ matrix.asset_name }} ${{ matrix.bin_name }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
