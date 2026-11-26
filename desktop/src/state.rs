@@ -60,18 +60,33 @@ pub struct PodState {
     pub was_in_ear: bool,
     pub was_paused_by_us: bool,
     pub last_seen_time: u64,
+
+    // Microphone Voice Quality & Clarity Boost (User Requested for Trigger Pod)
+    pub mic_boost_enabled: bool,
+    pub mic_boost_level: f32, // 1.0 to 2.5
+    pub mic_hd_wideband: bool,
+    pub mic_clarity_dsp: bool,
+    pub mic_selection: String, // "Auto-Switch", "Always Left", "Always Right"
+
+    // Bluetooth Signal Boost & Extended Wireless Range
+    pub signal_boost_enabled: bool,
+    pub signal_tx_power_dbm: i32,
+    pub signal_range_pct: i32,
+
+    // Live Detected Connected Hardware Devices
+    pub connected_devices: Vec<String>,
 }
 
 impl Default for PodState {
     fn default() -> Self {
         Self {
-            name: "AirPods Pro (2nd Gen)".to_string(),
-            model_id: "airpods_pro_2".to_string(),
-            chip_info: "Apple H2 Chip • AAC-ELD • 48 kHz Studio Stereo".to_string(),
+            name: "TRIGGR Kraken X1".to_string(),
+            model_id: "triggr_kraken_x1".to_string(),
+            chip_info: "TRIGGR Gaming Series • Low Latency AAC/SBC • 48 kHz".to_string(),
             is_connected: true,
-            left_battery: 88,
-            right_battery: 92,
-            case_battery: 76,
+            left_battery: 90,
+            right_battery: 90,
+            case_battery: 80,
             is_left_charging: false,
             is_right_charging: false,
             is_case_charging: false,
@@ -91,6 +106,18 @@ impl Default for PodState {
             was_in_ear: true,
             was_paused_by_us: false,
             last_seen_time: 0,
+
+            mic_boost_enabled: true,
+            mic_boost_level: 1.8,
+            mic_hd_wideband: true,
+            mic_clarity_dsp: true,
+            mic_selection: "Auto-Switch".to_string(),
+
+            signal_boost_enabled: true,
+            signal_tx_power_dbm: 10,
+            signal_range_pct: 35,
+
+            connected_devices: vec!["TRIGGR Kraken X1".to_string(), "Neuton:A1".to_string()],
         }
     }
 }
