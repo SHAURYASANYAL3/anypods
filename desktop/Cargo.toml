@@ -11,6 +11,7 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+image = { version = "0.25", default-features = false, features = ["png"] }
 eframe = { version = "0.27", default-features = false, features = ["default_fonts", "glow"] }
 
 [target.'cfg(windows)'.dependencies]

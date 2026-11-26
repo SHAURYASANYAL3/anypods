@@ -33,8 +33,8 @@ fn main() -> Result<(), eframe::Error> {
     // Native desktop window configuration (cross-platform for Windows, macOS, Linux)
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size(Vec2::new(420.0, 520.0))
-            .with_min_inner_size(Vec2::new(380.0, 480.0))
+            .with_inner_size(Vec2::new(460.0, 780.0))
+            .with_min_inner_size(Vec2::new(400.0, 600.0))
             .with_title("AnyPods Pro")
             .with_active(true)
             .with_resizable(true),

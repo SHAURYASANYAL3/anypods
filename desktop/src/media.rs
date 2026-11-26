@@ -2,6 +2,7 @@
 /// Used by In-Ear Detection to auto-pause on earbud removal and auto-resume on insertion.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum MediaAction {
     PlayPause,
     Pause,
