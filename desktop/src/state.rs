@@ -36,6 +36,7 @@ pub enum EqPreset {
 pub struct PodState {
     pub name: String,
     pub model_id: String,
+    pub chip_info: String,
     pub is_connected: bool,
     pub left_battery: i32,
     pub right_battery: i32,
@@ -66,6 +67,7 @@ impl Default for PodState {
         Self {
             name: "AirPods Pro (2nd Gen)".to_string(),
             model_id: "airpods_pro_2".to_string(),
+            chip_info: "Apple H2 Chip • AAC-ELD • 48 kHz Studio Stereo".to_string(),
             is_connected: true,
             left_battery: 88,
             right_battery: 92,

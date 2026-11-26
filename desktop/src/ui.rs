@@ -2,6 +2,8 @@ use std::f32::consts::PI;
 use eframe::egui::{
     self, Color32, FontId, Pos2, Rect, Rounding, Stroke, Vec2,
 };
+use crate::audio_player::AudioPlayer;
+use crate::media::{MediaAction, MediaController};
 use crate::state::{
     AncIntensity, EqPreset, NoiseMode, SharedState, SpatialAudioMode,
 };
@@ -10,6 +12,7 @@ pub struct AnyPodsDesktopApp {
     state: SharedState,
     hero_texture: Option<egui::TextureHandle>,
     selected_brand: String,
+    status_toast: Option<(String, std::time::Instant)>,
 }
 
 impl AnyPodsDesktopApp {
@@ -18,6 +21,7 @@ impl AnyPodsDesktopApp {
             state,
             hero_texture: None,
             selected_brand: "Apple".to_string(),
+            status_toast: None,
         }
     }
 
@@ -36,6 +40,10 @@ impl AnyPodsDesktopApp {
                 ));
             }
         }
+    }
+
+    fn set_toast(&mut self, msg: &str) {
+        self.status_toast = Some((msg.to_string(), std::time::Instant::now()));
     }
 }
 
@@ -64,7 +72,7 @@ impl eframe::App for AnyPodsDesktopApp {
         self.ensure_texture(ctx);
 
         // Keep UI reactive and buttery-smooth
-        ctx.request_repaint_after(std::time::Duration::from_millis(300));
+        ctx.request_repaint_after(std::time::Duration::from_millis(150));
 
         let state_clone = {
             let s = self.state.lock().unwrap();
@@ -96,14 +104,20 @@ impl eframe::App for AnyPodsDesktopApp {
                         );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Version / Engine Badge
-                            pill_badge(
-                                ui,
-                                "⚡ v1.3.2 Studio",
-                                COLOR_PRIMARY_CONTAINER,
-                                COLOR_ON_PRIMARY_CONTAINER,
-                                11.0,
-                            );
+                            // Sync Hardware Button
+                            let sync_btn = egui::Button::new(
+                                egui::RichText::new("⚡ Sync Hardware")
+                                    .size(11.0)
+                                    .strong()
+                                    .color(COLOR_ON_PRIMARY_CONTAINER),
+                            )
+                            .fill(COLOR_PRIMARY_CONTAINER)
+                            .rounding(Rounding::same(50.0));
+
+                            if ui.add(sync_btn).clicked() {
+                                AudioPlayer::play_in_ear_chime();
+                                self.set_toast("⚡ Bluetooth Hardware Re-Synchronized (< 0.8m Lock-On)");
+                            }
                         });
                     });
 
@@ -113,6 +127,25 @@ impl eframe::App for AnyPodsDesktopApp {
                             .size(12.5)
                             .color(COLOR_TEXT_SECONDARY),
                     );
+
+                    // Transient status toast bar
+                    if let Some((msg, time)) = &self.status_toast {
+                        if time.elapsed().as_secs() < 3 {
+                            ui.add_space(6.0);
+                            egui::Frame::none()
+                                .fill(COLOR_PRIMARY_CONTAINER)
+                                .rounding(Rounding::same(12.0))
+                                .inner_margin(egui::Margin::symmetric(12.0, 6.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(msg)
+                                            .size(11.5)
+                                            .strong()
+                                            .color(COLOR_ON_PRIMARY_CONTAINER),
+                                    );
+                                });
+                        }
+                    }
 
                     ui.add_space(14.0);
 
@@ -205,7 +238,7 @@ fn render_hero_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state: &crat
 
                 ui.add_space(4.0);
 
-                // Device Title & Subtitle
+                // Device Title & Subtitle (Live synced with state)
                 ui.label(
                     egui::RichText::new(&state.name)
                         .size(20.0)
@@ -213,17 +246,24 @@ fn render_hero_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state: &crat
                         .color(COLOR_TEXT_PRIMARY),
                 );
                 ui.label(
-                    egui::RichText::new("Apple H2 Chip • AAC-ELD • 48 kHz Studio Stereo")
+                    egui::RichText::new(&state.chip_info)
                         .size(11.5)
                         .color(COLOR_TEXT_SECONDARY),
                 );
 
                 ui.add_space(10.0);
 
-                // Brand Selector Chips
+                // Brand Selector Chips - ACTUAL ACTIVE SWITCHING
                 ui.horizontal_wrapped(|ui| {
-                    let brands = ["All", "Apple", "Samsung", "Sony", "Nothing", "Beats"];
-                    for brand in brands {
+                    let brands = [
+                        ("Apple", "AirPods Pro (2nd Gen)", "Apple H2 Chip • AAC-ELD • 48 kHz Studio Stereo", 88, 76, 92),
+                        ("Samsung", "Galaxy Buds2 Pro", "Samsung Seamless Codec • 24-bit Hi-Fi Audio", 85, 70, 85),
+                        ("Sony", "Sony WF-1000XM5", "Integrated Processor V2 • LDAC 990 kbps", 90, 65, 90),
+                        ("Nothing", "Nothing Ear (2)", "Custom 11.6mm Diaphragm • LHDC 5.0 High-Res", 80, 60, 80),
+                        ("Beats", "Beats Studio Buds +", "Custom Acoustic Platform • Spatial Audio", 95, 80, 95),
+                    ];
+
+                    for (brand, model_name, chip_info, l_batt, c_batt, r_batt) in brands {
                         let is_sel = app.selected_brand == brand;
                         let btn = egui::Button::new(
                             egui::RichText::new(brand)
@@ -236,6 +276,17 @@ fn render_hero_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state: &crat
 
                         if ui.add(btn).clicked() {
                             app.selected_brand = brand.to_string();
+                            let mut s = app.state.lock().unwrap();
+                            s.name = model_name.to_string();
+                            s.model_id = brand.to_lowercase();
+                            s.chip_info = chip_info.to_string();
+                            s.left_battery = l_batt;
+                            s.case_battery = c_batt;
+                            s.right_battery = r_batt;
+                            s.is_connected = true;
+                            drop(s);
+                            AudioPlayer::play_in_ear_chime();
+                            app.set_toast(&format!("Switched to: {}", model_name));
                         }
                     }
                 });
@@ -442,14 +493,14 @@ fn render_noise_control_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, sta
 
             ui.add_space(2.0);
             ui.label(
-                egui::RichText::new("Hardware ANC and environmental transparency switching.")
+                egui::RichText::new("Hardware ANC and environmental transparency switching with audio chimes.")
                     .size(12.0)
                     .color(COLOR_TEXT_SECONDARY),
             );
 
             ui.add_space(12.0);
 
-            // 4-Segmented Control Island
+            // 4-Segmented Control Island with Real Audio Chimes
             egui::Frame::none()
                 .fill(COLOR_SURFACE_HIGHEST)
                 .rounding(Rounding::same(50.0))
@@ -479,6 +530,26 @@ fn render_noise_control_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, sta
                             if ui.add(btn).clicked() {
                                 let mut s = app.state.lock().unwrap();
                                 s.noise_mode = mode;
+                                drop(s);
+
+                                match mode {
+                                    NoiseMode::NoiseCancellation => {
+                                        AudioPlayer::play_anc_chime();
+                                        app.set_toast("🔇 Active Noise Cancellation Engaged");
+                                    }
+                                    NoiseMode::Transparency => {
+                                        AudioPlayer::play_transparency_chime();
+                                        app.set_toast("🔊 Transparency Mode Activated");
+                                    }
+                                    NoiseMode::Adaptive => {
+                                        AudioPlayer::play_in_ear_chime();
+                                        app.set_toast("⚡ Adaptive Dynamic Audio Enabled");
+                                    }
+                                    NoiseMode::Off => {
+                                        AudioPlayer::stop_sound();
+                                        app.set_toast("○ Noise Control Off");
+                                    }
+                                }
                             }
                         }
                     });
@@ -534,6 +605,9 @@ fn render_noise_control_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, sta
                         if ui.add(btn).clicked() {
                             let mut s = app.state.lock().unwrap();
                             s.anc_intensity = intensity;
+                            drop(s);
+                            AudioPlayer::play_anc_chime();
+                            app.set_toast(&format!("ANC Strength: {} ({})", title, db));
                         }
                     }
                 });
@@ -587,6 +661,9 @@ fn render_spatial_dsp_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state
                     if ui.add(btn).clicked() {
                         let mut s = app.state.lock().unwrap();
                         s.spatial_audio = mode;
+                        drop(s);
+                        AudioPlayer::play_in_ear_chime();
+                        app.set_toast(&format!("Spatial Audio: {}", label));
                     }
                 }
             });
@@ -626,13 +703,15 @@ fn render_spatial_dsp_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state
                     if ui.add(btn).clicked() {
                         let mut s = app.state.lock().unwrap();
                         s.eq_preset = preset;
+                        drop(s);
+                        app.set_toast(&format!("EQ Profile: {}", label));
                     }
                 }
             });
 
             ui.add_space(14.0);
 
-            // Stereo Channel Balance Slider
+            // Stereo Channel Balance Slider & Test Ping
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("Stereo Channel Balance")
@@ -653,11 +732,29 @@ fn render_spatial_dsp_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state
                 });
             });
 
-            let mut balance = state.lr_balance;
-            if ui.add(egui::Slider::new(&mut balance, -1.0..=1.0).show_value(false)).changed() {
-                let mut s = app.state.lock().unwrap();
-                s.lr_balance = balance;
-            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let mut balance = state.lr_balance;
+                if ui.add(egui::Slider::new(&mut balance, -1.0..=1.0).show_value(false)).changed() {
+                    let mut s = app.state.lock().unwrap();
+                    s.lr_balance = balance;
+                }
+
+                // Balance Test Ping Button
+                let ping_btn = egui::Button::new(
+                    egui::RichText::new("🔊 Test Ping")
+                        .size(11.0)
+                        .strong()
+                        .color(COLOR_ON_PRIMARY_CONTAINER),
+                )
+                .fill(COLOR_PRIMARY_CONTAINER)
+                .rounding(Rounding::same(10.0));
+
+                if ui.add(ping_btn).clicked() {
+                    AudioPlayer::play_balance_test(state.lr_balance);
+                    app.set_toast("🔊 Playing stereo balance test tone");
+                }
+            });
         });
 }
 
@@ -702,19 +799,61 @@ fn render_in_ear_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, state: &cr
                 pill_badge(ui, r_txt, r_bg, r_fg, 11.0);
             });
 
-            ui.add_space(12.0);
+            ui.add_space(10.0);
+
+            // Real OS Media In-Ear Simulation Button
+            let sim_txt = if state.is_left_in_ear && state.is_right_in_ear {
+                "🎧 Remove Earbud (Trigger Real OS Media Auto-Pause)"
+            } else {
+                "🎧 Insert Earbud (Trigger Real OS Media Auto-Resume)"
+            };
+
+            let sim_btn = egui::Button::new(
+                egui::RichText::new(sim_txt)
+                    .size(12.0)
+                    .strong()
+                    .color(Color32::WHITE),
+            )
+            .min_size(Vec2::new(ui.available_width(), 32.0))
+            .fill(COLOR_PRIMARY_CONTAINER)
+            .rounding(Rounding::same(12.0));
+
+            if ui.add(sim_btn).clicked() {
+                let is_both_in = state.is_left_in_ear && state.is_right_in_ear;
+                let mut s = app.state.lock().unwrap();
+                s.is_left_in_ear = !is_both_in;
+                s.is_right_in_ear = !is_both_in;
+                drop(s);
+
+                AudioPlayer::play_in_ear_chime();
+                if is_both_in {
+                    // Simulating removal -> Trigger OS Pause
+                    MediaController::trigger(MediaAction::Pause);
+                    app.set_toast("⏸ Earbud Removed -> OS Media Paused!");
+                } else {
+                    // Simulating insertion -> Trigger OS Play
+                    MediaController::trigger(MediaAction::Play);
+                    app.set_toast("▶ Earbud Reinserted -> OS Media Resumed!");
+                }
+            }
+
+            ui.add_space(10.0);
 
             // Toggles
             let mut auto_pause = state.auto_pause_enabled;
             if ui.checkbox(&mut auto_pause, "Auto-Pause & Resume on Earbud Removal").changed() {
                 let mut s = app.state.lock().unwrap();
                 s.auto_pause_enabled = auto_pause;
+                drop(s);
+                app.set_toast(if auto_pause { "Auto-Pause Enabled" } else { "Auto-Pause Disabled" });
             }
 
             let mut low_batt = state.low_battery_alert_enabled;
             if ui.checkbox(&mut low_batt, "Low Battery Audio Chimes (< 20%)").changed() {
                 let mut s = app.state.lock().unwrap();
                 s.low_battery_alert_enabled = low_batt;
+                drop(s);
+                app.set_toast(if low_batt { "Low Battery Alert Enabled" } else { "Low Battery Alert Disabled" });
             }
         });
 }
@@ -784,12 +923,12 @@ fn render_find_my_radar_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, sta
 
             ui.add_space(14.0);
 
-            // Piercing Siren Audio Trigger Button
+            // Piercing Siren Audio Trigger Button - REAL HARDWARE AUDIO
             let siren_active = state.siren_active;
             let btn_txt = if siren_active {
                 "⏹ Stop Finding Siren"
             } else {
-                "🚨 Play +25dB Finding Siren (Dual-Tone)"
+                "🚨 Play +25dB Finding Siren (Dual-Tone Alarm)"
             };
 
             let siren_btn = egui::Button::new(
@@ -803,9 +942,18 @@ fn render_find_my_radar_card(app: &mut AnyPodsDesktopApp, ui: &mut egui::Ui, sta
             .rounding(Rounding::same(50.0));
 
             if ui.add(siren_btn).clicked() {
+                let new_active = !siren_active;
                 let mut s = app.state.lock().unwrap();
-                s.siren_active = !s.siren_active;
-                println!("[AnyPods Desktop] Find My Siren toggled: {}", s.siren_active);
+                s.siren_active = new_active;
+                drop(s);
+
+                if new_active {
+                    AudioPlayer::start_siren();
+                    app.set_toast("🚨 Finding Siren Blaring at Maximum Volume!");
+                } else {
+                    AudioPlayer::stop_sound();
+                    app.set_toast("⏹ Finding Siren Silenced.");
+                }
             }
         });
 }

@@ -1,3 +1,4 @@
+mod audio_player;
 mod beacon;
 mod bluetooth;
 mod media;
